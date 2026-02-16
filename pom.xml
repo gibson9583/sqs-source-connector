@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.github.cgibson</groupId>
+    <artifactId>sqs-connector</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>OIE SQS Source Connector</name>
+    <description>AWS SQS source connector for OIE with long polling support</description>
+
+    <modules>
+        <module>shared</module>
+        <module>server</module>
+        <module>client</module>
+        <module>package</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+        <mirth.version>4.5.2</mirth.version>
+        <aws.sdk.version>2.15.28</aws.sdk.version>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>repsy-mirth</id>
+            <url>https://repo.repsy.io/mvn/kpalang/mirthconnect</url>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- AWS SDK BOM -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- OIE -->
+            <dependency>
+                <groupId>com.mirth.connect</groupId>
+                <artifactId>mirth-server</artifactId>
+                <version>${mirth.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.mirth.connect</groupId>
+                <artifactId>donkey-server</artifactId>
+                <version>${mirth.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.mirth.connect</groupId>
+                <artifactId>donkey-model</artifactId>
+                <version>${mirth.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.mirth.connect</groupId>
+                <artifactId>mirth-client-core</artifactId>
+                <version>${mirth.version}</version>
+                <scope>provided</scope>
+            </dependency>
+
+            <!-- Internal modules -->
+            <dependency>
+                <groupId>io.github.cgibson</groupId>
+                <artifactId>sqs-connector-shared</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                    <configuration>
+                        <release>17</release>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.4.1</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

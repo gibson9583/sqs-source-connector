@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<connectorMetaData path="sqs-connector">
+    <name>SQS Reader</name>
+    <author>cgibson</author>
+    <pluginVersion>${project.version}</pluginVersion>
+    <mirthVersion>${mirth.version}</mirthVersion>
+    <url></url>
+    <description>AWS SQS source connector for OIE</description>
+    <protocol>SQS</protocol>
+    <type>SOURCE</type>
+    <transformers>
+        <string>Raw</string>
+        <string>HL7 v2.x</string>
+        <string>XML</string>
+        <string>JSON</string>
+        <string>Delimited Text</string>
+    </transformers>
+    <serverClassName>io.github.cgibson.sqs.SqsReceiver</serverClassName>
+    <sharedClassName>com.mirth.connect.connectors.sqs.SqsReceiverProperties</sharedClassName>
+    <clientClassName>io.github.cgibson.sqs.SqsReceiverPanel</clientClassName>
+
+    <!-- Connector module JARs -->
+    <library type="SHARED" path="libs/sqs-connector-shared-${project.version}.jar"/>
+    <library type="SERVER" path="libs/sqs-connector-server-${project.version}.jar"/>
+    <library type="CLIENT" path="libs/sqs-connector-client-${project.version}.jar"/>
+
+    <!-- AWS SDK v2 (matching OIE 4.5.2 bundled version 2.15.28) -->
+    <library type="SERVER" path="libs/sqs-2.15.28.jar"/>
+    <library type="SERVER" path="libs/sts-2.15.28.jar"/>
+    <library type="SERVER" path="libs/aws-core-2.15.28.jar"/>
+    <library type="SERVER" path="libs/sdk-core-2.15.28.jar"/>
+    <library type="SERVER" path="libs/auth-2.15.28.jar"/>
+    <library type="SERVER" path="libs/regions-2.15.28.jar"/>
+    <library type="SERVER" path="libs/protocol-core-2.15.28.jar"/>
+    <library type="SERVER" path="libs/aws-query-protocol-2.15.28.jar"/>
+    <library type="SERVER" path="libs/http-client-spi-2.15.28.jar"/>
+    <library type="SERVER" path="libs/apache-client-2.15.28.jar"/>
+    <library type="SERVER" path="libs/netty-nio-client-2.15.28.jar"/>
+    <library type="SERVER" path="libs/utils-2.15.28.jar"/>
+    <library type="SERVER" path="libs/metrics-spi-2.15.28.jar"/>
+    <library type="SERVER" path="libs/profiles-2.15.28.jar"/>
+    <library type="SERVER" path="libs/annotations-2.15.28.jar"/>
+
+    <!-- AWS SDK transitive dependencies -->
+    <library type="SERVER" path="libs/eventstream-1.0.1.jar"/>
+    <library type="SERVER" path="libs/httpclient-4.5.13.jar"/>
+    <library type="SERVER" path="libs/httpcore-4.4.11.jar"/>
+    <library type="SERVER" path="libs/commons-codec-1.11.jar"/>
+    <library type="SERVER" path="libs/commons-logging-1.2.jar"/>
+    <library type="SERVER" path="libs/reactive-streams-1.0.2.jar"/>
+    <library type="SERVER" path="libs/slf4j-api-1.7.28.jar"/>
+    <library type="SERVER" path="libs/jackson-core-2.10.4.jar"/>
+    <library type="SERVER" path="libs/jackson-annotations-2.10.4.jar"/>
+    <library type="SERVER" path="libs/jackson-databind-2.10.4.jar"/>
+
+    <!-- Netty (for AWS SDK async HTTP) -->
+    <library type="SERVER" path="libs/netty-codec-http-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-codec-http2-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-codec-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-transport-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-transport-native-epoll-4.1.53.Final-linux-x86_64.jar"/>
+    <library type="SERVER" path="libs/netty-transport-native-unix-common-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-common-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-handler-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-buffer-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-resolver-4.1.53.Final.jar"/>
+    <library type="SERVER" path="libs/netty-reactive-streams-2.0.4.jar"/>
+    <library type="SERVER" path="libs/netty-reactive-streams-http-2.0.4.jar"/>
+</connectorMetaData>
