@@ -72,10 +72,10 @@ to the `extensions` directory. A restart is required after installation.
 | `sqsMessageId` | SQS message ID |
 | `sqsReceiptHandle` | Receipt handle for message deletion |
 | `sqsMD5OfBody` | MD5 hash of the message body |
-| `sqsAttr_*` | System attributes (e.g. `sqsAttr_SentTimestamp`) |
+| `sqsAttr*` | System attributes (e.g. `sqsAttrSentTimestamp`) |
 | `sqsMessageGroupId` | FIFO queue message group ID |
 | `sqsSequenceNumber` | FIFO queue sequence number |
-| `sqsMsgAttr_*` | User-defined message attributes |
+| `sqsMsgAttr*` | User-defined message attributes (e.g. `sqsMsgAttrMyKey`) |
 
 ### S3 Event Variables
 | Key | Description |

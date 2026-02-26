@@ -745,7 +745,7 @@ public class SqsReceiver extends PollConnector {
         // System attributes (sent timestamp, sender ID, etc.)
         if (message.hasAttributes()) {
             for (Map.Entry<MessageSystemAttributeName, String> entry : message.attributes().entrySet()) {
-                sourceMap.put("sqsAttr_" + entry.getKey().toString(), entry.getValue());
+                sourceMap.put("sqsAttr" + entry.getKey().toString(), entry.getValue());
             }
 
             // FIFO-specific attributes
@@ -762,7 +762,7 @@ public class SqsReceiver extends PollConnector {
         // User-defined message attributes
         if (connectorProperties.isIncludeAttributes() && message.hasMessageAttributes()) {
             message.messageAttributes().forEach((key, attr) -> {
-                sourceMap.put("sqsMsgAttr_" + key, attr.stringValue());
+                sourceMap.put("sqsMsgAttr" + key, attr.stringValue());
             });
         }
 
