@@ -29,7 +29,7 @@ Requires OIE libraries in your Maven repository.
 mvn clean package
 ```
 
-The plugin zip will be in `package/target/sqs-connector-1.0.0.zip`.
+The plugin zip will be in `package/target/sqs-connector-0.1.0.zip`.
 
 ## Installation
 
