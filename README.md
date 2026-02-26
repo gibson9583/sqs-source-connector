@@ -106,4 +106,4 @@ User-defined S3 object metadata (`x-amz-meta-*` headers) is added to the source 
 
 ## License
 
-Mozilla Public License 2.0 (MPL-2.0)
+MIT License

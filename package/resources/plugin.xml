@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <pluginMetaData path="sqs-connector">
     <name>SQS Reader</name>
-    <author>cgibson</author>
+    <author>Chris Gibson</author>
     <pluginVersion>${project.version}</pluginVersion>
     <mirthVersion>${mirth.version}</mirthVersion>
     <url></url>

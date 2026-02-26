@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <connectorMetaData path="sqs-connector">
     <name>SQS Reader</name>
-    <author>cgibson</author>
+    <author>Chris Gibson</author>
     <pluginVersion>${project.version}</pluginVersion>
     <mirthVersion>${mirth.version}</mirthVersion>
     <url></url>
@@ -15,9 +15,9 @@
         <string>JSON</string>
         <string>Delimited Text</string>
     </transformers>
-    <serverClassName>io.github.cgibson.sqs.SqsReceiver</serverClassName>
+    <serverClassName>io.github.gibson9583.sqs.SqsReceiver</serverClassName>
     <sharedClassName>com.mirth.connect.connectors.sqs.SqsReceiverProperties</sharedClassName>
-    <clientClassName>io.github.cgibson.sqs.SqsReceiverPanel</clientClassName>
+    <clientClassName>io.github.gibson9583.sqs.SqsReceiverPanel</clientClassName>
 
     <!-- Connector module JARs -->
     <library type="SHARED" path="libs/sqs-connector-shared-${project.version}.jar"/>

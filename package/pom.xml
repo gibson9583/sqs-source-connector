@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.github.cgibson</groupId>
+        <groupId>io.github.gibson9583</groupId>
         <artifactId>sqs-connector</artifactId>
         <version>1.0.0</version>
     </parent>
@@ -16,17 +16,17 @@
 
     <dependencies>
         <dependency>
-            <groupId>io.github.cgibson</groupId>
+            <groupId>io.github.gibson9583</groupId>
             <artifactId>sqs-connector-shared</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.github.cgibson</groupId>
+            <groupId>io.github.gibson9583</groupId>
             <artifactId>sqs-connector-server</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.github.cgibson</groupId>
+            <groupId>io.github.gibson9583</groupId>
             <artifactId>sqs-connector-client</artifactId>
             <version>${project.version}</version>
         </dependency>

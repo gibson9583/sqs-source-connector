@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.cgibson</groupId>
+    <groupId>io.github.gibson9583</groupId>
     <artifactId>sqs-connector</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
@@ -72,7 +72,7 @@
 
             <!-- Internal modules -->
             <dependency>
-                <groupId>io.github.cgibson</groupId>
+                <groupId>io.github.gibson9583</groupId>
                 <artifactId>sqs-connector-shared</artifactId>
                 <version>${project.version}</version>
             </dependency>

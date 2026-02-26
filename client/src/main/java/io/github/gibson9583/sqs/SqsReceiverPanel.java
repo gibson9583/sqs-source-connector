@@ -1,7 +1,7 @@
 /*
- * SPDX-License-Identifier: MPL-2.0
+ * SPDX-License-Identifier: MIT
  */
-package io.github.cgibson.sqs;
+package io.github.gibson9583.sqs;
 
 import java.awt.CardLayout;
 import java.awt.Color;

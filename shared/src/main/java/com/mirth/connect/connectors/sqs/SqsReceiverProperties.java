@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: MPL-2.0
+ * SPDX-License-Identifier: MIT
  */
 package com.mirth.connect.connectors.sqs;
 

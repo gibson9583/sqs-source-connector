@@ -1,7 +1,7 @@
 /*
- * SPDX-License-Identifier: MPL-2.0
+ * SPDX-License-Identifier: MIT
  */
-package io.github.cgibson.sqs;
+package io.github.gibson9583.sqs;
 
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
