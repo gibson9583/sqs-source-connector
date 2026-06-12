@@ -28,9 +28,6 @@ import com.mirth.connect.connectors.sqs.SqsReceiverProperties.S3EventMode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.SqsClientBuilder;
@@ -50,9 +47,6 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.sts.StsClient;
-import software.amazon.awssdk.services.sts.auth.StsAssumeRoleCredentialsProvider;
-import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
 
 /**
  * OIE source connector that polls an AWS SQS queue for messages.
@@ -80,6 +74,7 @@ public class SqsReceiver extends PollConnector {
 
     private SqsClient sqsClient;
     private S3Client s3Client;
+    private AwsConnectorCredentials awsCredentials;
     private SqsReceiverProperties connectorProperties;
 
     // Resolved values (after Velocity substitution)
@@ -123,6 +118,11 @@ public class SqsReceiver extends PollConnector {
             // Resolve all Velocity/replacement variables
             resolveProperties();
 
+            awsCredentials = AwsConnectorCredentials.create(
+                    AwsConnectorCredentials.AuthType.valueOf(connectorProperties.getAuthType().name()),
+                    resolvedAccessKeyId, resolvedSecretAccessKey,
+                    resolvedRoleArn, resolvedExternalId, resolvedRegion);
+
             sqsClient = buildSqsClient();
 
             // Build S3 client only when fetching objects
@@ -149,17 +149,24 @@ public class SqsReceiver extends PollConnector {
                     resolvedVisibilityTimeout);
 
         } catch (SqsException e) {
+            closeClients();
             throw new ConnectorTaskException(
                     "Failed to connect to SQS queue: " + e.awsErrorDetails().errorMessage(), e);
         } catch (ConnectorTaskException e) {
+            closeClients();
             throw e;
         } catch (Exception e) {
+            closeClients();
             throw new ConnectorTaskException("Failed to initialize SQS client: " + e.getMessage(), e);
         }
     }
 
     @Override
     public void onStop() throws ConnectorTaskException {
+        closeClients();
+    }
+
+    private void closeClients() {
         if (s3Client != null) {
             try {
                 s3Client.close();
@@ -176,6 +183,15 @@ public class SqsReceiver extends PollConnector {
                 logger.warn("Error closing SQS client", e);
             } finally {
                 sqsClient = null;
+            }
+        }
+        if (awsCredentials != null) {
+            try {
+                awsCredentials.close();
+            } catch (Exception e) {
+                logger.warn("Error closing AWS credentials provider", e);
+            } finally {
+                awsCredentials = null;
             }
         }
     }
@@ -809,92 +825,32 @@ public class SqsReceiver extends PollConnector {
     }
 
     // =========================================================================
-    // SQS Client Builder
+    // AWS Client Builders
     // =========================================================================
 
     /**
      * Builds the SqsClient using resolved (post-Velocity) property values.
      */
     private SqsClient buildSqsClient() {
-        SqsClientBuilder builder = SqsClient.builder();
+        SqsClientBuilder builder = SqsClient.builder()
+                .credentialsProvider(awsCredentials.getProvider());
 
         if (resolvedRegion != null && !resolvedRegion.isBlank()) {
             builder.region(Region.of(resolvedRegion));
-        }
-
-        switch (connectorProperties.getAuthType()) {
-            case STATIC:
-                builder.credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(resolvedAccessKeyId, resolvedSecretAccessKey)));
-                break;
-
-            case ROLE:
-                AssumeRoleRequest.Builder roleRequestBuilder = AssumeRoleRequest.builder()
-                        .roleArn(resolvedRoleArn)
-                        .roleSessionName("oie-sqs-connector");
-
-                if (resolvedExternalId != null && !resolvedExternalId.isBlank()) {
-                    roleRequestBuilder.externalId(resolvedExternalId);
-                }
-
-                StsClient stsClient = resolvedRegion != null && !resolvedRegion.isBlank()
-                        ? StsClient.builder().region(Region.of(resolvedRegion)).build()
-                        : StsClient.builder().build();
-
-                builder.credentialsProvider(StsAssumeRoleCredentialsProvider.builder()
-                        .stsClient(stsClient)
-                        .refreshRequest(roleRequestBuilder.build())
-                        .build());
-                break;
-
-            case DEFAULT:
-            default:
-                builder.credentialsProvider(DefaultCredentialsProvider.create());
-                break;
         }
 
         return builder.build();
     }
 
     /**
-     * Builds the S3Client using the same auth configuration as the SQS client.
+     * Builds the S3Client using the same credentials as the SQS client.
      */
     private S3Client buildS3Client() {
-        S3ClientBuilder builder = S3Client.builder();
+        S3ClientBuilder builder = S3Client.builder()
+                .credentialsProvider(awsCredentials.getProvider());
 
         if (resolvedRegion != null && !resolvedRegion.isBlank()) {
             builder.region(Region.of(resolvedRegion));
-        }
-
-        switch (connectorProperties.getAuthType()) {
-            case STATIC:
-                builder.credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(resolvedAccessKeyId, resolvedSecretAccessKey)));
-                break;
-
-            case ROLE:
-                AssumeRoleRequest.Builder roleRequestBuilder = AssumeRoleRequest.builder()
-                        .roleArn(resolvedRoleArn)
-                        .roleSessionName("mirth-sqs-connector-s3");
-
-                if (resolvedExternalId != null && !resolvedExternalId.isBlank()) {
-                    roleRequestBuilder.externalId(resolvedExternalId);
-                }
-
-                StsClient stsClient = resolvedRegion != null && !resolvedRegion.isBlank()
-                        ? StsClient.builder().region(Region.of(resolvedRegion)).build()
-                        : StsClient.builder().build();
-
-                builder.credentialsProvider(StsAssumeRoleCredentialsProvider.builder()
-                        .stsClient(stsClient)
-                        .refreshRequest(roleRequestBuilder.build())
-                        .build());
-                break;
-
-            case DEFAULT:
-            default:
-                builder.credentialsProvider(DefaultCredentialsProvider.create());
-                break;
         }
 
         return builder.build();

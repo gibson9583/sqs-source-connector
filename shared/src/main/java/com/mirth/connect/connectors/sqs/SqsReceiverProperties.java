@@ -331,7 +331,7 @@ public class SqsReceiverProperties extends ConnectorProperties
     }
 
     // =========================================================================
-    // equals / hashCode / clone
+    // equals / hashCode
     // =========================================================================
 
     @Override
@@ -363,28 +363,5 @@ public class SqsReceiverProperties extends ConnectorProperties
                 roleArn, externalId, waitTimeSeconds, maxMessages, visibilityTimeout,
                 includeAttributes, messageGroupHandling, s3EventMode, s3MaxObjectSizeKB,
                 s3FileType, s3Encoding);
-    }
-
-    public SqsReceiverProperties cloneProperties() {
-        SqsReceiverProperties props = new SqsReceiverProperties();
-        props.pollConnectorProperties = new PollConnectorProperties(pollConnectorProperties);
-        props.sourceConnectorProperties = new SourceConnectorProperties();
-        props.queueUrl = queueUrl;
-        props.region = region;
-        props.authType = authType;
-        props.accessKeyId = accessKeyId;
-        props.secretAccessKey = secretAccessKey;
-        props.roleArn = roleArn;
-        props.externalId = externalId;
-        props.waitTimeSeconds = waitTimeSeconds;
-        props.maxMessages = maxMessages;
-        props.visibilityTimeout = visibilityTimeout;
-        props.includeAttributes = includeAttributes;
-        props.messageGroupHandling = messageGroupHandling;
-        props.s3EventMode = s3EventMode;
-        props.s3MaxObjectSizeKB = s3MaxObjectSizeKB;
-        props.s3FileType = s3FileType;
-        props.s3Encoding = s3Encoding;
-        return props;
     }
 }

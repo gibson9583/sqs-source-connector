@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<pluginMetaData path="sqs-connector">
-    <name>SQS Reader</name>
+<connectorMetaData path="sqs-connector">
+    <name>SQS Sender</name>
     <author>Chris Gibson</author>
     <pluginVersion>${project.version}</pluginVersion>
     <mirthVersion>${mirth.version}</mirthVersion>
     <url></url>
-    <description>AWS SQS source and destination connectors for OIE</description>
+    <description>AWS SQS destination connector for OIE</description>
+    <protocol>SQS</protocol>
+    <type>DESTINATION</type>
+    <transformers></transformers>
+    <serverClassName>io.github.gibson9583.sqs.SqsDispatcher</serverClassName>
+    <sharedClassName>com.mirth.connect.connectors.sqs.SqsDispatcherProperties</sharedClassName>
+    <clientClassName>io.github.gibson9583.sqs.SqsSenderPanel</clientClassName>
 
     <!-- Connector module JARs -->
     <library type="SHARED" path="libs/sqs-connector-shared-${project.version}.jar"/>
@@ -54,4 +60,4 @@
     <library type="SERVER" path="libs/netty-resolver-4.1.53.Final.jar"/>
     <library type="SERVER" path="libs/netty-reactive-streams-2.0.4.jar"/>
     <library type="SERVER" path="libs/netty-reactive-streams-http-2.0.4.jar"/>
-</pluginMetaData>
+</connectorMetaData>
