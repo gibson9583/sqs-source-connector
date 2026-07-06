@@ -1,0 +1,13 @@
+{
+    "name": "sqs-connector-webadmin",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Build for the SQS Connector web admin plugin (compiles web/plugin.jsx -> web/plugin.js).",
+    "type": "module",
+    "scripts": {
+        "build": "node web/build.mjs"
+    },
+    "devDependencies": {
+        "esbuild": "^0.21.0"
+    }
+}

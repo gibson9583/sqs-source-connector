@@ -9,8 +9,8 @@
     <version>0.1.0</version>
     <packaging>pom</packaging>
 
-    <name>OIE SQS Source Connector</name>
-    <description>AWS SQS source connector for OIE with long polling support</description>
+    <name>OIE SQS Connector</name>
+    <description>AWS SQS source and destination connectors for OIE</description>
 
     <modules>
         <module>shared</module>
@@ -23,6 +23,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>17</maven.compiler.release>
         <mirth.version>4.5.2</mirth.version>
+        <!-- Engine versions this plugin declares compatibility with (descriptor
+             mirthVersion accepts a comma-separated list). -->
+        <mirth.compatible.versions>4.5.2,4.6.0</mirth.compatible.versions>
         <aws.sdk.version>2.15.28</aws.sdk.version>
     </properties>
 

@@ -1,23 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <connectorMetaData path="sqs-connector">
-    <name>SQS Reader</name>
+    <name>SQS Sender</name>
     <author>Chris Gibson</author>
     <pluginVersion>${project.version}</pluginVersion>
     <mirthVersion>${mirth.compatible.versions}</mirthVersion>
     <url></url>
-    <description>AWS SQS source connector for OIE</description>
+    <description>AWS SQS destination connector for OIE</description>
     <protocol>SQS</protocol>
-    <type>SOURCE</type>
-    <transformers>
-        <string>Raw</string>
-        <string>HL7 v2.x</string>
-        <string>XML</string>
-        <string>JSON</string>
-        <string>Delimited Text</string>
-    </transformers>
-    <serverClassName>io.github.gibson9583.sqs.SqsReceiver</serverClassName>
-    <sharedClassName>com.mirth.connect.connectors.sqs.SqsReceiverProperties</sharedClassName>
-    <clientClassName>io.github.gibson9583.sqs.SqsReceiverPanel</clientClassName>
+    <type>DESTINATION</type>
+    <transformers></transformers>
+    <serverClassName>io.github.gibson9583.sqs.SqsDispatcher</serverClassName>
+    <sharedClassName>com.mirth.connect.connectors.sqs.SqsDispatcherProperties</sharedClassName>
+    <clientClassName>io.github.gibson9583.sqs.SqsSenderPanel</clientClassName>
 
     <!-- Connector module JARs -->
     <library type="SHARED" path="libs/sqs-connector-shared-${project.version}.jar"/>

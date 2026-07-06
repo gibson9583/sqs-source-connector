@@ -3,9 +3,9 @@
     <name>SQS Reader</name>
     <author>Chris Gibson</author>
     <pluginVersion>${project.version}</pluginVersion>
-    <mirthVersion>${mirth.version}</mirthVersion>
+    <mirthVersion>${mirth.compatible.versions}</mirthVersion>
     <url></url>
-    <description>AWS SQS source connector for OIE</description>
+    <description>AWS SQS source and destination connectors for OIE</description>
 
     <!-- Connector module JARs -->
     <library type="SHARED" path="libs/sqs-connector-shared-${project.version}.jar"/>

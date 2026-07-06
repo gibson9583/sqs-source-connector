@@ -1,11 +1,35 @@
-# OIE SQS Source Connector
+# OIE SQS Connector
 
-An Open Integration Engine (OIE) source connector plugin that polls AWS SQS queues for messages.
+An Open Integration Engine (OIE) connector plugin for AWS SQS, providing both a
+source connector (SQS Reader) that polls queues for messages and a destination
+connector (SQS Sender) that sends messages to queues.
 
 ![SQS Connector Settings](docs/sqs-connector-plugin.png)
 
+## Web Administrator support
+
+This plugin ships UI for **all three** OIE surfaces:
+
+- **Server**: `server/` (SqsReceiver / SqsDispatcher)
+- **Swing Administrator**: `client/` (SqsReceiverPanel / SqsSenderPanel)
+- **Web Administrator**: `package/webadmin/` — a web admin plugin
+  (`plugin.json` + `web/plugin.js`) bundled into the extension zip under
+  `sqs-connector/webadmin/`. It registers the "SQS Reader" / "SQS Sender"
+  connector panels using the web administrator's plugin API.
+
+The web administrator discovers it automatically when its plugin search path
+includes the engine's extensions directory — set
+`WEBADMIN_PLUGIN_DIRS=/path/to/oie/extensions` (or `"pluginDirs"` in the web
+administrator's `config.json`). No separate install step: installing this
+extension on the engine makes it available to both administrators.
+
+Note: `package/webadmin/` is copied into the zip **without** Maven resource
+filtering (see the `copy-webadmin` execution in `package/pom.xml`) so Velocity
+tokens like `${message.encodedData}` in the JavaScript survive the build.
+
 ## Features
 
+### SQS Reader (source)
 - Long polling with configurable wait time, max messages, and visibility timeout
 - All AWS authentication methods: Default Credential Chain, Static Credentials, Assume Role (STS)
 - Standard and FIFO queue support with message group handling
@@ -15,6 +39,15 @@ An Open Integration Engine (OIE) source connector plugin that polls AWS SQS queu
 - SQS message attributes and system attributes in source map
 - All text fields support replacement variables (Velocity expressions)
 - Delete retry with configurable attempts on transient failures
+
+### SQS Sender (destination)
+- Send messages to Standard and FIFO queues
+- All AWS authentication methods: Default Credential Chain, Static Credentials, Assume Role (STS)
+- Configurable message body template (defaults to `${message.encodedData}`)
+- FIFO message group ID and deduplication ID support
+- Optional delivery delay for standard queues
+- Per-message replacement variables for queue URL, body, delay, and FIFO IDs
+- Works with OIE destination queueing/retry settings (failed sends are queued)
 
 ## Requirements
 
@@ -36,7 +69,7 @@ The plugin zip will be in `package/target/sqs-connector-0.1.0.zip`.
 Install using the Extensions manager in the OIE Administrator, or manually extract
 to the `extensions` directory. A restart is required after installation.
 
-## Configuration
+## Configuration — SQS Reader (source)
 
 ### AWS Connection
 - **Queue URL** (required): Full SQS queue URL
@@ -63,6 +96,26 @@ to the `extensions` directory. A restart is required after installation.
   - **Max Object Size (KB)**: Objects larger than this are skipped (0 = no limit)
   - **File Type**: Text (decoded to string) or Binary (raw bytes)
   - **Encoding**: Fallback encoding when the S3 object's Content-Type header does not specify a charset. Content-Type charset is always tried first.
+
+## Configuration — SQS Sender (destination)
+
+### AWS Connection
+- **Queue URL** (required): Full SQS queue URL — supports per-message replacement variables
+- **Region** (optional): AWS region. If blank, uses the default region from the AWS credential provider chain
+
+### Authentication
+Same options as the SQS Reader: Default Credential Chain, Static Credentials, or Assume Role (STS).
+
+### Send Settings
+- **Delay Seconds** (optional): Delivery delay 0-900 seconds. Leave blank to use the queue default. Not supported on FIFO queues
+- **FIFO Message Group ID**: Required for FIFO queues, ignored for standard queues
+- **FIFO Deduplication ID** (optional): Leave blank if the queue uses content-based deduplication
+
+### Message Body Template
+The SQS message body to send. Defaults to `${message.encodedData}` (the transformed
+channel message). Any replacement variables are resolved per message.
+
+The SQS `MessageId` returned by AWS is stored as the destination response data.
 
 ## Source Map Variables
 
