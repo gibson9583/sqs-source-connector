@@ -6,6 +6,27 @@ connector (SQS Sender) that sends messages to queues.
 
 ![SQS Connector Settings](docs/sqs-connector-plugin.png)
 
+## Web Administrator support
+
+This plugin ships UI for **all three** OIE surfaces:
+
+- **Server**: `server/` (SqsReceiver / SqsDispatcher)
+- **Swing Administrator**: `client/` (SqsReceiverPanel / SqsSenderPanel)
+- **Web Administrator**: `package/webadmin/` — a web admin plugin
+  (`plugin.json` + `web/plugin.js`) bundled into the extension zip under
+  `sqs-connector/webadmin/`. It registers the "SQS Reader" / "SQS Sender"
+  connector panels using the web administrator's plugin API.
+
+The web administrator discovers it automatically when its plugin search path
+includes the engine's extensions directory — set
+`WEBADMIN_PLUGIN_DIRS=/path/to/oie/extensions` (or `"pluginDirs"` in the web
+administrator's `config.json`). No separate install step: installing this
+extension on the engine makes it available to both administrators.
+
+Note: `package/webadmin/` is copied into the zip **without** Maven resource
+filtering (see the `copy-webadmin` execution in `package/pom.xml`) so Velocity
+tokens like `${message.encodedData}` in the JavaScript survive the build.
+
 ## Features
 
 ### SQS Reader (source)

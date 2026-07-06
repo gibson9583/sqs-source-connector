@@ -3,7 +3,7 @@
     <name>SQS Sender</name>
     <author>Chris Gibson</author>
     <pluginVersion>${project.version}</pluginVersion>
-    <mirthVersion>${mirth.version}</mirthVersion>
+    <mirthVersion>${mirth.compatible.versions}</mirthVersion>
     <url></url>
     <description>AWS SQS destination connector for OIE</description>
     <protocol>SQS</protocol>

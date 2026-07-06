@@ -209,7 +209,7 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
                 templateTextArea.setBackground(UIConstants.INVALID_COLOR);
             }
         } else {
-            templateTextArea.setBackground(null);
+            templateTextArea.setBackground(Color.WHITE);
         }
 
         // Static auth requires key and secret
@@ -253,7 +253,7 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
         accessKeyIdField.setBackground(null);
         secretAccessKeyField.setBackground(null);
         roleArnField.setBackground(null);
-        templateTextArea.setBackground(null);
+        templateTextArea.setBackground(Color.WHITE);
     }
 
     // =========================================================================
@@ -378,6 +378,9 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
         templateTextArea = new JTextArea(8, 40);
         templateTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         templateTextArea.setLineWrap(true);
+        // Default L&F gives the text area a grey background; other connectors
+        // use a white content area, so set it explicitly.
+        templateTextArea.setBackground(Color.WHITE);
         templateTextArea.setToolTipText(
                 "SQS message body to send. Use ${message.encodedData} for the transformed "
                         + "channel message, or ${message.rawData} for the original inbound message."
