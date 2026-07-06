@@ -35,6 +35,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
           MANIFEST_VERSION="$(jq -r .version oie.json)"
+          MANIFEST_VERSION="${MANIFEST_VERSION#v}"
           if [ "$VERSION" != "$MANIFEST_VERSION" ]; then
             echo "::error::Tag $TAG implies version $VERSION but oie.json says $MANIFEST_VERSION"
             exit 1
@@ -50,11 +51,13 @@ jobs:
         id: pkg
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
-          ASSET="sqs-connector-${VERSION}.zip"
-          SRC="package/target/${ASSET}"
-          if [ ! -f "$SRC" ]; then
-            echo "::error::Expected artifact not found: $SRC"; ls -l package/target || true; exit 1
+          # Use whichever sqs-connector zip the build produced (named from the Maven
+          # project version) and publish it under the tag-matched asset name.
+          SRC="$(find package/target -maxdepth 1 -name 'sqs-connector-*.zip' | head -n1)"
+          if [ -z "$SRC" ]; then
+            echo "::error::No sqs-connector zip found in package/target"; ls -l package/target || true; exit 1
           fi
+          ASSET="sqs-connector-${VERSION}.zip"
           mkdir -p out
           cp "$SRC" "out/${ASSET}"
           ( cd out && sha256sum "${ASSET}" > "${ASSET}.sha256" )
