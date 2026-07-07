@@ -7,7 +7,7 @@ This extension ships **two** connectors:
   message into an engine message.
 - **SQS Sender** — a channel **destination** that publishes messages to an SQS queue.
 
-![SQS Connector settings](docs/sqs-connector-plugin.png)
+![SQS Connector settings](sqs-connector-plugin.png)
 
 ## Features
 

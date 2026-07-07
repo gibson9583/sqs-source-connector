@@ -44,8 +44,13 @@ jobs:
 
       # Builds every module and assembles package/target/sqs-connector-<version>.zip.
       # (The package module builds the web-admin plugin via frontend-maven-plugin.)
+      # versions:set makes the tag the source of truth so plugin.xml's pluginVersion
+      # matches oie.json — otherwise the engine reports the pom version as "installed"
+      # and the store shows a perpetual update.
       - name: Build extension zip
-        run: mvn -B -ntp -DskipTests package
+        run: |
+          mvn -B -ntp versions:set -DnewVersion="${{ steps.ver.outputs.version }}" -DprocessAllModules=true -DgenerateBackupPoms=false
+          mvn -B -ntp -DskipTests package
 
       - name: Stage the release asset and checksum
         id: pkg
