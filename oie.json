@@ -4,7 +4,7 @@
     "name": "AWS SQS Connector",
     "description": "Source (SQS Reader) and destination (SQS Sender) connectors for Amazon SQS queues.",
     "type": "connector",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "minEngineVersion": "4.6.0",
     "maxEngineVersion": null,
     "filename": "sqs-connector-{version}.zip",
