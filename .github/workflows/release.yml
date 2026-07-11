@@ -2,7 +2,7 @@
 # Store expects (the extension zip plus its .sha256 sidecar) on a semver tag, then
 # opens a community-catalog PR so the store offers it.
 #
-#   git tag v0.5.1 && git push origin v0.5.1
+#   git tag v0.5.2 && git push origin v0.5.2
 #
 # versions:set makes the tag the source of truth so plugin.xml's pluginVersion and
 # the jar names match oie.json (otherwise the engine reports a stale version and the
@@ -84,7 +84,7 @@ jobs:
           files: |
             out/${{ steps.pkg.outputs.asset }}
             out/${{ steps.pkg.outputs.asset }}.sha256
-          # Tags like v0.5.1-rc1 publish as pre-releases (store beta channel only).
+          # Tags like v0.5.2-rc1 publish as pre-releases (store beta channel only).
           prerelease: ${{ contains(github.ref_name, '-') }}
 
   # Opens a PR against the community catalog with this release's manifest — catalog
@@ -153,6 +153,14 @@ jobs:
               "docsUrl": "https://raw.githubusercontent.com/${{ github.repository }}/v${VERSION}/docs/store.md"
           }
           EOF
+          # Carry the ui surfaces declared by the tagged oie.json (downloaded by the
+          # meta.json step above); omit the key entirely when oie.json has no ui.
+          UI="$(jq -c '.ui // empty' /tmp/oie.json)"
+          if [ -n "$UI" ]; then
+            jq --indent 4 --argjson ui "$UI" '. + {ui: $ui}' \
+              "manifests/${TYPE_DIR}/${PLUGIN_ID}/${VERSION}.json" > /tmp/version-manifest.json
+            mv /tmp/version-manifest.json "manifests/${TYPE_DIR}/${PLUGIN_ID}/${VERSION}.json"
+          fi
 
       - name: Validate (schema + digest download)
         run: node scripts/build-index.mjs --lint --verify "manifests/${TYPE_DIR}/${PLUGIN_ID}/${VERSION}.json"
