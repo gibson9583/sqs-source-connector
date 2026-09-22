@@ -21,10 +21,11 @@ jobs:
       - name: Test and package all connector surfaces
         run: mvn -B -ntp clean verify
       - name: Verify extension contents and registrations
-        run: python3 tools/check_package.py
+        run: |
+          python3 -m unittest discover -s tools -p 'test_*.py' -v
+          python3 tools/check_package.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
           path: '**/target/surefire-reports/'
-

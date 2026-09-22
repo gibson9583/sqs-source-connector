@@ -64,14 +64,22 @@ Requires OIE libraries in your Maven repository.
 
 ```bash
 mvn clean verify
+python3 -m unittest discover -s tools -p 'test_*.py' -v
 python3 tools/check_package.py
 ```
 
 The plugin zip will be in `package/target/sqs-connector-<version>.zip` (currently
-`1.0.0`). The build runs Java regression tests and tests against the built web
+`1.0.1`). The build runs Java regression tests and tests against the built web
 bundle. The package check verifies library references, API registrations, version
 consistency, and exclusion of test/build tooling from the extension. Tests do not
 require AWS credentials or contact AWS.
+
+The extension ships four JARs: its shared, server and client modules, plus the
+SQS service module from AWS SDK 2.15.28. OIE supplies the matching shared SDK,
+STS/S3, HTTP, Jackson and logging libraries. The package check rejects additional
+JARs and mismatched library registrations. Assembly uses resolved dependencies
+rather than a cached library directory, so older build output cannot reintroduce
+the redundant libraries.
 
 ## Installation
 
