@@ -1,0 +1,8 @@
+{
+  "bundle": "package/target/sqs-connector-*.zip",
+  "jars": [
+    "sqs-connector/libs/sqs-connector-shared-*.jar",
+    "sqs-connector/libs/sqs-connector-server-*.jar",
+    "sqs-connector/libs/sqs-connector-client-*.jar"
+  ]
+}
