@@ -2,7 +2,7 @@
 # Store expects (the extension zip plus its .sha256 sidecar) on a semver tag, then
 # opens a community-catalog PR so the store offers it.
 #
-#   git tag v1.0.0 && git push origin v1.0.0
+#   git tag v1.0.1 && git push origin v1.0.1
 #
 # versions:set makes the tag the source of truth so plugin.xml's pluginVersion and
 # the jar names match oie.json (otherwise the engine reports a stale version and the
@@ -85,6 +85,7 @@ jobs:
         run: |
           mvn -B -ntp versions:set -DnewVersion="${{ steps.ver.outputs.version }}" -DprocessAllModules=true -DgenerateBackupPoms=false
           mvn -B -ntp clean verify
+          python3 -m unittest discover -s tools -p 'test_*.py' -v
           python3 tools/check_package.py
 
       - name: Sign and verify release JARs with SSL.com

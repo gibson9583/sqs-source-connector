@@ -6,7 +6,7 @@
 
     <groupId>io.github.gibson9583</groupId>
     <artifactId>sqs-connector</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>pom</packaging>
 
     <name>OIE SQS Connector</name>
@@ -53,6 +53,20 @@
                 <version>${aws.sdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Only the SQS service module is absent from OIE. The shared SDK,
+                 HTTP providers and their dependencies come from the engine. -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>sqs</artifactId>
+                <version>${aws.sdk.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>*</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <!-- OIE -->

@@ -11,10 +11,24 @@
             <directory>${project.build.directory}/dist</directory>
             <outputDirectory>sqs-connector</outputDirectory>
             <includes>
-                <include>**/*</include>
+                <include>plugin.xml</include>
+                <include>source.xml</include>
+                <include>destination.xml</include>
+                <include>webadmin/plugin.json</include>
+                <include>webadmin/web/plugin.js</include>
             </includes>
         </fileSet>
     </fileSets>
+    <!-- Resolve the four direct runtime dependencies for each assembly. Never
+         pick up stale dist/libs files or the engine's transitive libraries. -->
+    <dependencySets>
+        <dependencySet>
+            <outputDirectory>sqs-connector/libs</outputDirectory>
+            <useProjectArtifact>false</useProjectArtifact>
+            <useTransitiveDependencies>false</useTransitiveDependencies>
+            <scope>runtime</scope>
+        </dependencySet>
+    </dependencySets>
     <files>
         <file>
             <source>${project.basedir}/../LICENSE</source>

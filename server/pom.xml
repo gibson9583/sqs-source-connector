@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.gibson9583</groupId>
         <artifactId>sqs-connector</artifactId>
-        <version>1.0.0</version>
+        <version>1.0.1</version>
     </parent>
 
     <artifactId>sqs-connector-server</artifactId>
@@ -92,7 +92,7 @@
             <artifactId>mirth-server</artifactId>
         </dependency>
 
-        <!-- AWS SDK -->
+        <!-- Ship only SQS; OIE supplies STS, S3 and the shared SDK runtime. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sqs</artifactId>
@@ -100,10 +100,19 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sts</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- The engine supplies Jackson; declare the API used for S3 events. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.10.4</version>
             <scope>provided</scope>
         </dependency>
 
