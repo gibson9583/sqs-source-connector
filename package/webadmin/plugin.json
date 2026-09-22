@@ -1,8 +1,10 @@
 {
     "id": "sqs-connector",
     "name": "SQS Connector",
-    "version": "1.0.1",
+    "version": "1.0.0",
     "author": "Chris Gibson",
     "description": "Connector panels for the AWS SQS engine connector (SQS Reader source / SQS Sender destination).",
-    "client": { "entry": "web/plugin.js" }
+    "client": {
+        "entry": "web/plugin.js"
+    }
 }

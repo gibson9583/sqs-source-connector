@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.gibson9583</groupId>
         <artifactId>sqs-connector</artifactId>
-        <version>0.5.2</version>
+        <version>1.0.0</version>
     </parent>
 
     <artifactId>sqs-connector-package</artifactId>
@@ -80,6 +80,9 @@
                                         <exclude>.gitignore</exclude>
                                         <exclude>web/build.mjs</exclude>
                                         <exclude>web/plugin.jsx</exclude>
+                                        <exclude>web/ui-model.mjs</exclude>
+                                        <exclude>test/**</exclude>
+                                        <exclude>tests/**</exclude>
                                     </excludes>
                                 </resource>
                             </resources>
@@ -110,13 +113,19 @@
                         <id>npm-install</id>
                         <phase>generate-resources</phase>
                         <goals><goal>npm</goal></goals>
-                        <configuration><arguments>install</arguments></configuration>
+                        <configuration><arguments>ci</arguments></configuration>
                     </execution>
                     <execution>
                         <id>npm-build-webadmin</id>
                         <phase>generate-resources</phase>
                         <goals><goal>npm</goal></goals>
                         <configuration><arguments>run build</arguments></configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-test-webadmin</id>
+                        <phase>test</phase>
+                        <goals><goal>npm</goal></goals>
+                        <configuration><arguments>test</arguments></configuration>
                     </execution>
                 </executions>
             </plugin>

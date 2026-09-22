@@ -1,24 +1,36 @@
 /*
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: MPL-2.0
  */
 package io.github.gibson9583.sqs;
 
+import java.io.ByteArrayOutputStream;
+import java.io.StringReader;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.mirth.connect.donkey.model.event.ConnectionStatusEventType;
+import com.mirth.connect.donkey.model.event.ErrorEventType;
+import com.mirth.connect.donkey.model.message.BatchRawMessage;
 import com.mirth.connect.donkey.model.message.RawMessage;
 import com.mirth.connect.donkey.server.ConnectorTaskException;
 import com.mirth.connect.donkey.server.channel.DispatchResult;
+import com.mirth.connect.donkey.server.channel.ChannelException;
 import com.mirth.connect.donkey.server.channel.PollConnector;
 import com.mirth.connect.donkey.server.event.ConnectionStatusEvent;
+import com.mirth.connect.donkey.server.event.ErrorEvent;
+import com.mirth.connect.donkey.server.message.batch.BatchMessageReader;
+import com.mirth.connect.donkey.server.message.batch.ResponseHandler;
 import com.mirth.connect.server.controllers.EventController;
 import com.mirth.connect.server.util.TemplateValueReplacer;
 
@@ -27,6 +39,7 @@ import com.mirth.connect.connectors.sqs.SqsReceiverProperties.S3EventMode;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -37,15 +50,12 @@ import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 import software.amazon.awssdk.services.sqs.model.QueueAttributeName;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
-import software.amazon.awssdk.services.sqs.model.ReceiveMessageResponse;
 import software.amazon.awssdk.services.sqs.model.SqsException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
 /**
@@ -56,9 +66,8 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
  * long polling, configurable visibility timeout, and all AWS auth methods.
  * <p>
  * All String properties are resolved through OIE's {@link TemplateValueReplacer}
- * at start time so that Velocity expressions like {@code ${sqs.queueUrl}},
- * {@code ${sqs.waitTime}}, {@code ${AWS_ACCESS_KEY}} etc. are substituted
- * from Configuration Map, global/channel maps, and environment variables.
+ * at start time so that Velocity expressions like {@code ${queueUrl}} and
+ * {@code ${waitTime}} are substituted from Configuration Map and global/channel maps.
  * <p>
  * Messages are deleted from SQS after successful dispatch to the channel.
  * On failure, messages remain in the queue and reappear after the visibility
@@ -68,6 +77,9 @@ public class SqsReceiver extends PollConnector {
 
     private static final Logger logger = LogManager.getLogger(SqsReceiver.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final Set<String> OBJECT_REMOVAL_EVENTS = Set.of(
+            "ObjectRemoved:Delete", "ObjectRemoved:DeleteMarkerCreated",
+            "LifecycleExpiration:Delete", "LifecycleExpiration:DeleteMarkerCreated");
 
     private final TemplateValueReplacer replacer = new TemplateValueReplacer();
     private EventController eventController;
@@ -118,6 +130,16 @@ public class SqsReceiver extends PollConnector {
             // Resolve all Velocity/replacement variables
             resolveProperties();
 
+            if (connectorProperties.isMessageGroupHandling()
+                    && (!connectorProperties.getSourceConnectorProperties().isRespondAfterProcessing()
+                    || connectorProperties.getSourceConnectorProperties().getProcessingThreads() != 1)) {
+                throw new ConnectorTaskException("FIFO source-order handling requires Source Queue OFF "
+                        + "and exactly one processing thread. Destination queue ordering is managed separately.");
+            }
+            if (resolvedS3BinaryMode && connectorProperties.getSourceConnectorProperties().isProcessBatch()) {
+                throw new ConnectorTaskException("Process Batch requires text content; select Text for S3 Fetch Object or disable Process Batch.");
+            }
+
             awsCredentials = AwsConnectorCredentials.create(
                     AwsConnectorCredentials.AuthType.valueOf(connectorProperties.getAuthType().name()),
                     resolvedAccessKeyId, resolvedSecretAccessKey,
@@ -151,7 +173,7 @@ public class SqsReceiver extends PollConnector {
         } catch (SqsException e) {
             closeClients();
             throw new ConnectorTaskException(
-                    "Failed to connect to SQS queue: " + e.awsErrorDetails().errorMessage(), e);
+                    "Failed to connect to SQS queue: " + e.getMessage(), e);
         } catch (ConnectorTaskException e) {
             closeClients();
             throw e;
@@ -212,7 +234,7 @@ public class SqsReceiver extends PollConnector {
 
     /**
      * Resolves all String properties through OIE's TemplateValueReplacer.
-     * This handles ${configMap.key}, ${globalMap.key}, and other Velocity
+     * This handles top-level map keys such as ${queueUrl} and other Velocity
      * expressions that users may have entered in the connector settings.
      * <p>
      * Numeric properties are parsed to int after substitution. If a value
@@ -258,7 +280,9 @@ public class SqsReceiver extends PollConnector {
                         throw new ConnectorTaskException(
                                 "S3 Max Object Size (KB) cannot be negative: " + kb);
                     }
-                    resolvedS3MaxObjectSizeBytes = kb == 0 ? 0 : kb * 1024;
+                    resolvedS3MaxObjectSizeBytes = Math.multiplyExact(kb, 1024L);
+                } catch (ArithmeticException e) {
+                    throw new ConnectorTaskException("S3 Max Object Size (KB) is too large: " + maxSizeStr, e);
                 } catch (NumberFormatException e) {
                     throw new ConnectorTaskException(
                             "S3 Max Object Size (KB) is not a valid integer: '" + maxSizeStr + "'. "
@@ -302,7 +326,7 @@ public class SqsReceiver extends PollConnector {
         } catch (NumberFormatException e) {
             throw new ConnectorTaskException(
                     propertyName + " is not a valid integer: '" + value + "'. "
-                            + "If using a replacement variable like ${configMap.key}, ensure it resolves to a number.");
+                            + "If using a replacement variable like ${waitTime}, ensure it resolves to a number.");
         }
     }
 
@@ -314,135 +338,151 @@ public class SqsReceiver extends PollConnector {
     protected void poll() throws InterruptedException {
         eventController.dispatchEvent(new ConnectionStatusEvent(getChannelId(),
                 getMetaDataId(), getSourceName(), ConnectionStatusEventType.POLLING));
-
         try {
+            String queuePath = URI.create(resolvedQueueUrl).getPath();
+            boolean fifo = queuePath != null && queuePath.replaceFirst("/+$", "").endsWith(".fifo");
             boolean moreMessages = true;
-
-            while (moreMessages && !isTerminated()) {
+            while (moreMessages && !isTerminated() && !Thread.currentThread().isInterrupted()) {
                 ReceiveMessageRequest.Builder requestBuilder = ReceiveMessageRequest.builder()
                         .queueUrl(resolvedQueueUrl)
                         .maxNumberOfMessages(resolvedMaxMessages)
                         .waitTimeSeconds(resolvedWaitTimeSeconds)
                         .visibilityTimeout(resolvedVisibilityTimeout)
                         .attributeNamesWithStrings("All");
-
-                // Request all user-defined message attributes
                 if (connectorProperties.isIncludeAttributes()) {
                     requestBuilder.messageAttributeNames("All");
                 }
-
-                ReceiveMessageResponse response = sqsClient.receiveMessage(requestBuilder.build());
-                List<Message> messages = response.messages();
-
-                if (messages == null || messages.isEmpty()) {
-                    moreMessages = false;
-                    continue;
+                List<Message> messages = sqsClient.receiveMessage(requestBuilder.build()).messages();
+                if (messages.isEmpty()) {
+                    break;
                 }
-
-                logger.debug("Received {} messages from SQS queue", messages.size());
-
+                // Do not process successors already delivered with a failed group member.
+                // A later receive can retry that group's head after visibility expires.
+                Set<String> failedGroups = new HashSet<>();
                 for (Message message : messages) {
-                    if (isTerminated()) {
+                    if (isTerminated() || Thread.currentThread().isInterrupted()) {
                         break;
                     }
-
-                    processMessage(message);
+                    String group = fifo ? message.attributes().get(MessageSystemAttributeName.MESSAGE_GROUP_ID) : null;
+                    if (group != null && failedGroups.contains(group)) {
+                        continue;
+                    }
+                    if (!processMessage(message) && group != null) {
+                        failedGroups.add(group);
+                    }
                 }
-
-                // If we received the max number, there may be more in the queue
                 moreMessages = messages.size() >= resolvedMaxMessages;
             }
-
-        } catch (SqsException e) {
-            logger.error("SQS polling error: {}", e.awsErrorDetails().errorMessage(), e);
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 throw (InterruptedException) e;
             }
-            logger.error("Unexpected error during SQS polling", e);
+            reportError("Error receiving messages from SQS queue " + resolvedQueueUrl, e);
         } finally {
             eventController.dispatchEvent(new ConnectionStatusEvent(getChannelId(),
                     getMetaDataId(), getSourceName(), ConnectionStatusEventType.IDLE));
         }
     }
 
-    // =========================================================================
-    // Message Processing
-    // =========================================================================
-
-    private void processMessage(Message message) {
-        S3EventMode s3Mode = connectorProperties.getS3EventMode();
-        if (s3Mode == null) {
-            s3Mode = S3EventMode.DISABLED;
-        }
-
-        if (s3Mode == S3EventMode.DISABLED) {
-            processStandardMessage(message);
-        } else {
-            processS3EventMessage(message, s3Mode);
-        }
-    }
-
-    private void processStandardMessage(Message message) {
-        DispatchResult dispatchResult = null;
-
+    private boolean processMessage(Message message) {
         try {
-            RawMessage rawMessage = new RawMessage(message.body());
-            rawMessage.setSourceMap(buildBaseSourceMap(message));
-
-            dispatchResult = dispatchRawMessage(rawMessage);
-
-            if (dispatchResult != null && dispatchResult.getProcessedMessage() != null) {
-                deleteMessage(message);
-            }
-
+            S3EventMode mode = connectorProperties.getS3EventMode();
+            boolean accepted = mode == null || mode == S3EventMode.DISABLED
+                    ? processStandardMessage(message) : processS3EventMessage(message, mode);
+            return accepted && deleteMessage(message);
         } catch (Exception e) {
-            logger.error("Error processing SQS message {}: {}", message.messageId(), e.getMessage(), e);
-        } finally {
-            finishDispatch(dispatchResult);
+            reportError("Error processing SQS message " + message.messageId(), e);
+            return false;
         }
     }
 
-    private void processS3EventMessage(Message message, S3EventMode s3Mode) {
-        boolean deleteMessage = false;
+    private boolean processStandardMessage(Message message) throws Exception {
+        RawMessage rawMessage = new RawMessage(message.body());
+        rawMessage.setSourceMap(buildBaseSourceMap(message));
+        return dispatchIncoming(rawMessage);
+    }
 
+    /** Admission includes durable source-queue acceptance; it does not require destination success. */
+    private boolean dispatchIncoming(RawMessage rawMessage) throws Exception {
+        if (isProcessBatch()) {
+            if (Boolean.TRUE.equals(rawMessage.isBinary())) {
+                throw new IllegalArgumentException("Process Batch requires text content");
+            }
+            try (StringReader reader = new StringReader(rawMessage.getRawData())) {
+                Boolean messagesExist = dispatchBatchMessage(
+                        new BatchRawMessage(new BatchMessageReader(reader), rawMessage.getSourceMap()),
+                        new ResponseHandler() {
+                            @Override
+                            public void responseProcess(int sequence, boolean complete) throws Exception {
+                                requireAccepted(getDispatchResult());
+                            }
+                            @Override
+                            public void responseError(ChannelException e) {
+                                // dispatchBatchMessage propagates this failure to the caller.
+                            }
+                        });
+                if (!Boolean.TRUE.equals(messagesExist)) {
+                    throw new IllegalStateException("Batch was not accepted or produced no messages; retaining the SQS receipt");
+                }
+                return true;
+            }
+        }
+        DispatchResult result = null;
         try {
-            String body = message.body();
-            JsonNode root = objectMapper.readTree(body);
+            result = dispatchRawMessage(rawMessage);
+            requireAccepted(result);
+            return true;
+        } finally {
+            // Complete engine bookkeeping before acknowledging the external receipt.
+            finishDispatch(result);
+        }
+    }
 
-            // Auto-detect SNS envelope and unwrap
-            if (root.has("Type") && "Notification".equals(root.path("Type").asText())) {
+    private static void requireAccepted(DispatchResult result) throws Exception {
+        if (result == null) {
+            throw new IllegalStateException("Channel did not accept the message");
+        }
+        if (result.getChannelException() != null) {
+            throw result.getChannelException();
+        }
+    }
+
+    private boolean processS3EventMessage(Message message, S3EventMode mode) throws Exception {
+        String body = message.body();
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(body);
+            if (root != null && "Notification".equals(root.path("Type").asText())) {
                 String innerMessage = root.path("Message").asText();
-                if (innerMessage != null && !innerMessage.isEmpty()) {
-                    logger.debug("Detected SNS envelope, unwrapping inner Message");
+                if (!innerMessage.isEmpty()) {
                     root = objectMapper.readTree(innerMessage);
                 }
             }
+        } catch (JsonProcessingException e) {
+            // A mixed queue may contain ordinary non-JSON messages.
+            return processStandardMessage(message);
+        }
+        if (root != null && isEventBridgeS3Event(root)) {
+            return processEventBridgeS3(root, message, body, mode);
+        }
+        if (root != null && isStandardS3Records(root.path("Records"))) {
+            return processStandardS3Records(root.path("Records"), message, body, mode);
+        }
+        return processStandardMessage(message);
+    }
 
-            // Detect event format and dispatch accordingly
-            if (isEventBridgeS3Event(root)) {
-                deleteMessage = processEventBridgeS3(root, message, body, s3Mode);
-            } else if (root.path("Records").isArray() && root.path("Records").size() > 0) {
-                deleteMessage = processStandardS3Records(root.path("Records"), message, body, s3Mode);
-            } else {
-                // Not a recognized S3 event format — fall back to standard processing
-                logger.debug("SQS message {} is not a recognized S3 event format, processing as standard message",
-                        message.messageId());
-                processStandardMessage(message);
-                return;
+    private boolean isStandardS3Records(JsonNode records) {
+        if (!records.isArray() || records.size() == 0) {
+            return false;
+        }
+        for (JsonNode record : records) {
+            if (!"aws:s3".equals(record.path("eventSource").asText())
+                    || !record.path("s3").path("bucket").path("name").isTextual()
+                    || !record.path("s3").path("object").path("key").isTextual()) {
+                return false;
             }
-
-        } catch (Exception e) {
-            logger.error("Error parsing S3 event from SQS message {}: {}",
-                    message.messageId(), e.getMessage(), e);
-            // Fall back to standard processing on parse failure
-            processStandardMessage(message);
-            return;
         }
-
-        if (deleteMessage) {
-            deleteMessage(message);
-        }
+        return true;
     }
 
     /**
@@ -459,47 +499,100 @@ public class SqsReceiver extends PollConnector {
      * Processes an EventBridge-format S3 event notification.
      * Format: { "source": "aws.s3", "detail-type": "Object Created", "detail": { "bucket": {...}, "object": {...} } }
      */
-    private boolean processEventBridgeS3(JsonNode root, Message message, String body, S3EventMode s3Mode) {
-        DispatchResult dispatchResult = null;
+    private boolean processEventBridgeS3(JsonNode root, Message message, String body, S3EventMode s3Mode) throws Exception {
+        Map<String, Object> sourceMap = buildBaseSourceMap(message);
 
-        try {
-            Map<String, Object> sourceMap = buildBaseSourceMap(message);
+        JsonNode detail = root.path("detail");
+        JsonNode bucketNode = detail.path("bucket");
+        JsonNode objectNode = detail.path("object");
 
-            JsonNode detail = root.path("detail");
-            JsonNode bucketNode = detail.path("bucket");
-            JsonNode objectNode = detail.path("object");
+        // detail-type maps to event name (e.g. "Object Created")
+        String detailType = root.path("detail-type").asText(null);
+        String reason = detail.path("reason").asText(null);
+        String eventName = detailType;
+        if (reason != null && !reason.isEmpty()) {
+            eventName = (detailType != null ? detailType + ":" : "") + reason;
+        }
 
-            // detail-type maps to event name (e.g. "Object Created")
-            String detailType = root.path("detail-type").asText(null);
-            String reason = detail.path("reason").asText(null);
-            String eventName = detailType;
-            if (reason != null && !reason.isEmpty()) {
-                eventName = (detailType != null ? detailType + ":" : "") + reason;
-            }
+        String awsRegion = root.path("region").asText(null);
+        String bucketName = bucketNode.path("name").asText(null);
 
-            String awsRegion = root.path("region").asText(null);
-            String bucketName = bucketNode.path("name").asText(null);
-
-            // Bucket ARN from the resources array
-            String bucketArn = null;
-            JsonNode resources = root.path("resources");
-            if (resources.isArray()) {
-                for (JsonNode res : resources) {
-                    String arn = res.asText(null);
-                    if (arn != null && arn.startsWith("arn:aws:s3")) {
-                        bucketArn = arn;
-                        break;
-                    }
+        // Bucket ARN from the resources array
+        String bucketArn = null;
+        JsonNode resources = root.path("resources");
+        if (resources.isArray()) {
+            for (JsonNode res : resources) {
+                String arn = res.asText(null);
+                if (arn != null && arn.startsWith("arn:aws:s3")) {
+                    bucketArn = arn;
+                    break;
                 }
             }
+        }
 
+        String objectKey = objectNode.path("key").asText(null);
+        long objectSize = objectNode.path("size").asLong(-1);
+        // EventBridge uses lowercase "etag" and hyphenated "version-id"
+        String objectETag = objectNode.path("etag").asText(null);
+        String objectVersionId = objectNode.path("version-id").asText(null);
+
+        // Populate source map
+        if (eventName != null) sourceMap.put("s3EventName", eventName);
+        if (bucketName != null) sourceMap.put("s3BucketName", bucketName);
+        if (bucketArn != null) sourceMap.put("s3BucketArn", bucketArn);
+        if (objectKey != null) sourceMap.put("s3ObjectKey", objectKey);
+        if (objectSize >= 0) sourceMap.put("s3ObjectSize", objectSize);
+        if (objectETag != null) sourceMap.put("s3ObjectETag", objectETag);
+        if (objectVersionId != null) sourceMap.put("s3ObjectVersionId", objectVersionId);
+        if (awsRegion != null) sourceMap.put("s3Region", awsRegion);
+        sourceMap.put("s3EventFormat", "EventBridge");
+
+        RawMessage rawMessage;
+
+        if (s3Mode == S3EventMode.FETCH_OBJECT && "Object Deleted".equals(detailType)) {
+            sourceMap.put("s3FetchStatus", "NOT_APPLICABLE");
+            rawMessage = new RawMessage(body);
+        } else if (s3Mode == S3EventMode.FETCH_OBJECT && bucketName != null && objectKey != null) {
+            RawMessage fetched = fetchS3Object(bucketName, objectKey, sourceMap);
+            rawMessage = fetched != null ? fetched : new RawMessage(body);
+        } else {
+            rawMessage = new RawMessage(body);
+        }
+
+        rawMessage.setSourceMap(sourceMap);
+        return dispatchIncoming(rawMessage);
+    }
+
+    /**
+     * Processes standard S3 notification format with Records[] array.
+     * Format: { "Records": [{ "eventName": "...", "s3": { "bucket": {...}, "object": {...} } }] }
+     */
+    private boolean processStandardS3Records(JsonNode records, Message message, String body, S3EventMode s3Mode) throws Exception {
+        for (int i = 0; i < records.size(); i++) {
+            if (isTerminated() || Thread.currentThread().isInterrupted()) {
+                return false;
+            }
+            JsonNode record = records.get(i);
+            Map<String, Object> sourceMap = buildBaseSourceMap(message);
+
+            // Extract S3 event details
+            String eventName = record.path("eventName").asText(null);
+            String awsRegion = record.path("awsRegion").asText(null);
+            JsonNode s3Node = record.path("s3");
+            JsonNode bucketNode = s3Node.path("bucket");
+            JsonNode objectNode = s3Node.path("object");
+
+            String bucketName = bucketNode.path("name").asText(null);
+            String bucketArn = bucketNode.path("arn").asText(null);
             String objectKey = objectNode.path("key").asText(null);
+            if (objectKey != null) {
+                objectKey = URLDecoder.decode(objectKey, StandardCharsets.UTF_8);
+            }
             long objectSize = objectNode.path("size").asLong(-1);
-            // EventBridge uses lowercase "etag" and hyphenated "version-id"
-            String objectETag = objectNode.path("etag").asText(null);
-            String objectVersionId = objectNode.path("version-id").asText(null);
+            String objectETag = objectNode.path("eTag").asText(null);
+            String objectVersionId = objectNode.path("versionId").asText(null);
 
-            // Populate source map
+            // Populate source map with S3 details
             if (eventName != null) sourceMap.put("s3EventName", eventName);
             if (bucketName != null) sourceMap.put("s3BucketName", bucketName);
             if (bucketArn != null) sourceMap.put("s3BucketArn", bucketArn);
@@ -508,210 +601,134 @@ public class SqsReceiver extends PollConnector {
             if (objectETag != null) sourceMap.put("s3ObjectETag", objectETag);
             if (objectVersionId != null) sourceMap.put("s3ObjectVersionId", objectVersionId);
             if (awsRegion != null) sourceMap.put("s3Region", awsRegion);
-            sourceMap.put("s3EventFormat", "EventBridge");
+            sourceMap.put("s3EventFormat", "S3Notification");
+
+            if (records.size() > 1) {
+                sourceMap.put("s3RecordIndex", i);
+                sourceMap.put("s3RecordCount", records.size());
+            }
 
             RawMessage rawMessage;
 
-            if (s3Mode == S3EventMode.FETCH_OBJECT && bucketName != null && objectKey != null) {
-                RawMessage fetched = fetchS3Object(bucketName, objectKey, objectSize, sourceMap);
+            if (s3Mode == S3EventMode.FETCH_OBJECT && eventName != null && OBJECT_REMOVAL_EVENTS.contains(eventName)) {
+                sourceMap.put("s3FetchStatus", "NOT_APPLICABLE");
+                rawMessage = new RawMessage(body);
+            } else if (s3Mode == S3EventMode.FETCH_OBJECT && bucketName != null && objectKey != null) {
+                RawMessage fetched = fetchS3Object(bucketName, objectKey, sourceMap);
                 rawMessage = fetched != null ? fetched : new RawMessage(body);
             } else {
                 rawMessage = new RawMessage(body);
             }
 
             rawMessage.setSourceMap(sourceMap);
-            dispatchResult = dispatchRawMessage(rawMessage);
-
-            return dispatchResult != null && dispatchResult.getProcessedMessage() != null;
-
-        } catch (Exception e) {
-            logger.error("Error processing EventBridge S3 event from SQS message {}: {}",
-                    message.messageId(), e.getMessage(), e);
-            return false;
-        } finally {
-            finishDispatch(dispatchResult);
+            if (!dispatchIncoming(rawMessage)) {
+                return false;
+            }
         }
+        return true;
     }
 
     /**
-     * Processes standard S3 notification format with Records[] array.
-     * Format: { "Records": [{ "eventName": "...", "s3": { "bucket": {...}, "object": {...} } }] }
+     * Fetches the event's version (or conditionally its ETag). The actual response is bounded,
+     * including absent/incorrect Content-Length; no stale event size or separate HEAD is trusted.
+     * Only an explicit size-limit outcome returns null. API/read failures propagate for retry.
      */
-    private boolean processStandardS3Records(JsonNode records, Message message, String body, S3EventMode s3Mode) {
-        boolean allDispatched = true;
-
-        for (int i = 0; i < records.size(); i++) {
-            if (isTerminated()) {
-                allDispatched = false;
-                break;
-            }
-
-            JsonNode record = records.get(i);
-            DispatchResult dispatchResult = null;
-
+    private RawMessage fetchS3Object(String bucket, String key, Map<String, Object> sourceMap) throws Exception {
+        GetObjectRequest.Builder request = GetObjectRequest.builder().bucket(bucket).key(key);
+        String versionId = (String) sourceMap.get("s3ObjectVersionId");
+        String eTag = (String) sourceMap.get("s3ObjectETag");
+        if (versionId != null && !versionId.isBlank()) {
+            request.versionId(versionId);
+        }
+        if (eTag != null && !eTag.isBlank()) {
+            request.ifMatch(eTag.startsWith("\"") ? eTag : "\"" + eTag + "\"");
+        }
+        try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(request.build())) {
             try {
-                Map<String, Object> sourceMap = buildBaseSourceMap(message);
-
-                // Extract S3 event details
-                String eventName = record.path("eventName").asText(null);
-                String awsRegion = record.path("awsRegion").asText(null);
-                JsonNode s3Node = record.path("s3");
-                JsonNode bucketNode = s3Node.path("bucket");
-                JsonNode objectNode = s3Node.path("object");
-
-                String bucketName = bucketNode.path("name").asText(null);
-                String bucketArn = bucketNode.path("arn").asText(null);
-                String objectKey = objectNode.path("key").asText(null);
-                if (objectKey != null) {
-                    objectKey = URLDecoder.decode(objectKey, StandardCharsets.UTF_8);
+                GetObjectResponse response = stream.response();
+                if (resolvedS3MaxObjectSizeBytes > 0 && response.contentLength() != null
+                        && response.contentLength() > resolvedS3MaxObjectSizeBytes) {
+                    return oversizedObject(stream, sourceMap, bucket, key);
                 }
-                long objectSize = objectNode.path("size").asLong(-1);
-                String objectETag = objectNode.path("eTag").asText(null);
-                String objectVersionId = objectNode.path("versionId").asText(null);
-
-                // Populate source map with S3 details
-                if (eventName != null) sourceMap.put("s3EventName", eventName);
-                if (bucketName != null) sourceMap.put("s3BucketName", bucketName);
-                if (bucketArn != null) sourceMap.put("s3BucketArn", bucketArn);
-                if (objectKey != null) sourceMap.put("s3ObjectKey", objectKey);
-                if (objectSize >= 0) sourceMap.put("s3ObjectSize", objectSize);
-                if (objectETag != null) sourceMap.put("s3ObjectETag", objectETag);
-                if (objectVersionId != null) sourceMap.put("s3ObjectVersionId", objectVersionId);
-                if (awsRegion != null) sourceMap.put("s3Region", awsRegion);
-                sourceMap.put("s3EventFormat", "S3Notification");
-
-                if (records.size() > 1) {
-                    sourceMap.put("s3RecordIndex", i);
-                    sourceMap.put("s3RecordCount", records.size());
+                ByteArrayOutputStream content = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                long total = 0;
+                while (true) {
+                    if (isTerminated() || Thread.currentThread().isInterrupted()) {
+                        throw new InterruptedException("S3 fetch interrupted or source connector stopping");
+                    }
+                    int requested = resolvedS3MaxObjectSizeBytes > 0
+                            ? (int) Math.min(buffer.length, resolvedS3MaxObjectSizeBytes - total + 1)
+                            : buffer.length;
+                    int count = stream.read(buffer, 0, requested);
+                    if (count == -1) break;
+                    total += count;
+                    if (resolvedS3MaxObjectSizeBytes > 0 && total > resolvedS3MaxObjectSizeBytes) {
+                        return oversizedObject(stream, sourceMap, bucket, key);
+                    }
+                    content.write(buffer, 0, count);
+                }
+                byte[] bytes = content.toByteArray();
+                // Standard object metadata
+                if (response.contentType() != null) {
+                    sourceMap.put("s3ContentType", response.contentType());
+                }
+                if (response.contentLength() != null) {
+                    sourceMap.put("s3ContentLength", response.contentLength());
+                }
+                if (response.contentEncoding() != null) {
+                    sourceMap.put("s3ContentEncoding", response.contentEncoding());
+                }
+                if (response.lastModified() != null) {
+                    sourceMap.put("s3LastModified", response.lastModified().toString());
+                }
+                if (response.eTag() != null) {
+                    sourceMap.putIfAbsent("s3ObjectETag", response.eTag());
+                    sourceMap.put("s3FetchedObjectETag", response.eTag());
+                }
+                if (response.versionId() != null) {
+                    sourceMap.putIfAbsent("s3ObjectVersionId", response.versionId());
+                    sourceMap.put("s3FetchedObjectVersionId", response.versionId());
+                }
+                if (response.storageClassAsString() != null) {
+                    sourceMap.put("s3StorageClass", response.storageClassAsString());
+                }
+                if (response.serverSideEncryptionAsString() != null) {
+                    sourceMap.put("s3ServerSideEncryption", response.serverSideEncryptionAsString());
+                }
+                if (response.cacheControl() != null) {
+                    sourceMap.put("s3CacheControl", response.cacheControl());
+                }
+                if (response.contentDisposition() != null) {
+                    sourceMap.put("s3ContentDisposition", response.contentDisposition());
                 }
 
-                RawMessage rawMessage;
-
-                if (s3Mode == S3EventMode.FETCH_OBJECT && bucketName != null && objectKey != null) {
-                    RawMessage fetched = fetchS3Object(bucketName, objectKey, objectSize, sourceMap);
-                    rawMessage = fetched != null ? fetched : new RawMessage(body);
-                } else {
-                    rawMessage = new RawMessage(body);
+                // User-defined metadata (x-amz-meta-* headers)
+                if (response.hasMetadata()) {
+                    for (Map.Entry<String, String> entry : response.metadata().entrySet()) {
+                        sourceMap.put(entry.getKey(), entry.getValue());
+                    }
                 }
 
-                rawMessage.setSourceMap(sourceMap);
-                dispatchResult = dispatchRawMessage(rawMessage);
-
-                if (dispatchResult == null || dispatchResult.getProcessedMessage() == null) {
-                    allDispatched = false;
-                }
-
-            } catch (Exception e) {
-                logger.error("Error processing S3 event record {} from SQS message {}: {}",
-                        i, message.messageId(), e.getMessage(), e);
-                allDispatched = false;
-            } finally {
-                finishDispatch(dispatchResult);
+                sourceMap.put("s3FetchStatus", "FETCHED");
+                return resolvedS3BinaryMode ? new RawMessage(bytes)
+                        : new RawMessage(new String(bytes, resolveEncoding(response.contentType())));
+            } catch (Exception | Error e) {
+                // Closing an Apache response can drain its remainder. Abort failures instead.
+                stream.abort();
+                throw e;
             }
         }
-
-        return allDispatched;
     }
 
-    /**
-     * Fetches an S3 object and populates the source map with object metadata
-     * (content type, last modified, storage class, user metadata, etc.).
-     * Returns a {@link RawMessage} containing the object content (as text or
-     * binary depending on the configured file type), or null if the object
-     * exceeds the size limit or the fetch fails.
-     */
-    private RawMessage fetchS3Object(String bucket, String key, long knownSize, Map<String, Object> sourceMap) {
-        try {
-            // Check size limit
-            if (resolvedS3MaxObjectSizeBytes > 0) {
-                long sizeToCheck = knownSize;
-
-                // If size not in event, do a HEAD request
-                if (sizeToCheck < 0) {
-                    HeadObjectResponse headResponse = s3Client.headObject(HeadObjectRequest.builder()
-                            .bucket(bucket)
-                            .key(key)
-                            .build());
-                    sizeToCheck = headResponse.contentLength();
-                }
-
-                if (sizeToCheck > resolvedS3MaxObjectSizeBytes) {
-                    logger.warn("S3 object s3://{}/{} size ({} bytes) exceeds max limit ({} bytes). "
-                            + "Skipping fetch and passing original event JSON.",
-                            bucket, key, sizeToCheck, resolvedS3MaxObjectSizeBytes);
-                    return null;
-                }
-            }
-
-            ResponseBytes<GetObjectResponse> responseBytes = s3Client.getObjectAsBytes(
-                    GetObjectRequest.builder()
-                            .bucket(bucket)
-                            .key(key)
-                            .build());
-
-            GetObjectResponse response = responseBytes.response();
-
-            // Standard object metadata
-            if (response.contentType() != null) {
-                sourceMap.put("s3ContentType", response.contentType());
-            }
-            if (response.contentLength() != null) {
-                sourceMap.put("s3ContentLength", response.contentLength());
-            }
-            if (response.contentEncoding() != null) {
-                sourceMap.put("s3ContentEncoding", response.contentEncoding());
-            }
-            if (response.lastModified() != null) {
-                sourceMap.put("s3LastModified", response.lastModified().toString());
-            }
-            if (response.eTag() != null) {
-                sourceMap.put("s3ObjectETag", response.eTag());
-            }
-            if (response.versionId() != null) {
-                sourceMap.put("s3ObjectVersionId", response.versionId());
-            }
-            if (response.storageClassAsString() != null) {
-                sourceMap.put("s3StorageClass", response.storageClassAsString());
-            }
-            if (response.serverSideEncryptionAsString() != null) {
-                sourceMap.put("s3ServerSideEncryption", response.serverSideEncryptionAsString());
-            }
-            if (response.cacheControl() != null) {
-                sourceMap.put("s3CacheControl", response.cacheControl());
-            }
-            if (response.contentDisposition() != null) {
-                sourceMap.put("s3ContentDisposition", response.contentDisposition());
-            }
-
-            // User-defined metadata (x-amz-meta-* headers)
-            if (response.hasMetadata()) {
-                for (Map.Entry<String, String> entry : response.metadata().entrySet()) {
-                    sourceMap.put(entry.getKey(), entry.getValue());
-                }
-            }
-
-            byte[] bytes = responseBytes.asByteArray();
-
-            if (resolvedS3BinaryMode) {
-                logger.debug("Fetched S3 object s3://{}/{} ({} bytes, binary mode, contentType={})",
-                        bucket, key, bytes.length, response.contentType());
-                return new RawMessage(bytes);
-            } else {
-                Charset charset = resolveEncoding(response.contentType());
-                logger.debug("Fetched S3 object s3://{}/{} ({} bytes, text mode, contentType={}, charset={})",
-                        bucket, key, bytes.length, response.contentType(), charset.name());
-                return new RawMessage(new String(bytes, charset));
-            }
-
-        } catch (S3Exception e) {
-            logger.error("Failed to fetch S3 object s3://{}/{}: {}", bucket, key,
-                    e.awsErrorDetails().errorMessage(), e);
-            return null;
-        } catch (Exception e) {
-            logger.error("Unexpected error fetching S3 object s3://{}/{}: {}", bucket, key,
-                    e.getMessage(), e);
-            return null;
-        }
+    private RawMessage oversizedObject(ResponseInputStream<GetObjectResponse> stream,
+            Map<String, Object> sourceMap, String bucket, String key) {
+        stream.abort();
+        sourceMap.put("s3FetchStatus", "OVERSIZED");
+        sourceMap.put("s3FetchLimitBytes", resolvedS3MaxObjectSizeBytes);
+        logger.warn("S3 object s3://{}/{} exceeds max limit ({} bytes); passing original event JSON",
+                bucket, key, resolvedS3MaxObjectSizeBytes);
+        return null;
     }
 
     /**
@@ -720,19 +737,12 @@ public class SqsReceiver extends PollConnector {
      * there, falls back to the user-configured encoding.
      */
     private Charset resolveEncoding(String contentType) {
-        // Always try Content-Type charset first
         if (contentType != null) {
-            for (String param : contentType.split(";")) {
-                String trimmed = param.trim();
-                if (trimmed.toLowerCase().startsWith("charset=")) {
-                    try {
-                        return Charset.forName(trimmed.substring("charset=".length()).trim());
-                    } catch (Exception e) {
-                        logger.warn("Unknown charset in Content-Type '{}', falling back to configured encoding",
-                                contentType);
-                    }
-                    break;
-                }
+            try {
+                Charset charset = org.apache.http.entity.ContentType.parse(contentType).getCharset();
+                if (charset != null) return charset;
+            } catch (RuntimeException e) {
+                logger.warn("Unknown charset or invalid Content-Type '{}', falling back to configured encoding", contentType);
             }
         }
 
@@ -777,9 +787,14 @@ public class SqsReceiver extends PollConnector {
 
         // User-defined message attributes
         if (connectorProperties.isIncludeAttributes() && message.hasMessageAttributes()) {
+            Map<String, String> attributeTypes = new HashMap<>();
             message.messageAttributes().forEach((key, attr) -> {
-                sourceMap.put("sqsMsgAttr" + key, attr.stringValue());
+                attributeTypes.put(key, attr.dataType());
+                sourceMap.put("sqsMsgAttr" + key, attr.binaryValue() != null
+                        ? Base64.getEncoder().encodeToString(attr.binaryValue().asByteArray())
+                        : attr.stringValue());
             });
+            sourceMap.put("sqsMessageAttributeTypes", attributeTypes);
         }
 
         return sourceMap;
@@ -788,40 +803,38 @@ public class SqsReceiver extends PollConnector {
     private static final int DELETE_MAX_RETRIES = 3;
     private static final long DELETE_RETRY_DELAY_MS = 1000;
 
-    private void deleteMessage(Message message) {
+    private boolean deleteMessage(Message message) {
         for (int attempt = 1; attempt <= DELETE_MAX_RETRIES; attempt++) {
             try {
                 sqsClient.deleteMessage(DeleteMessageRequest.builder()
-                        .queueUrl(resolvedQueueUrl)
-                        .receiptHandle(message.receiptHandle())
-                        .build());
-
-                logger.debug("Deleted SQS message: {}", message.messageId());
-                return;
-
-            } catch (SqsException e) {
-                if (attempt < DELETE_MAX_RETRIES) {
-                    logger.warn("Failed to delete SQS message {} (attempt {}/{}): {}. Retrying in {}ms...",
-                            message.messageId(), attempt, DELETE_MAX_RETRIES,
-                            e.awsErrorDetails().errorMessage(), DELETE_RETRY_DELAY_MS);
-                    try {
-                        Thread.sleep(DELETE_RETRY_DELAY_MS);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        logger.error("Interrupted while retrying delete for SQS message {}. "
-                                + "Message may be redelivered after visibility timeout. Queue: {}",
-                                message.messageId(), resolvedQueueUrl);
-                        return;
-                    }
-                } else {
-                    logger.error("Failed to delete SQS message {} after {} attempts. "
-                            + "Message will be redelivered after visibility timeout ({}s). "
-                            + "Queue: {}, ReceiptHandle: {}",
-                            message.messageId(), DELETE_MAX_RETRIES, resolvedVisibilityTimeout,
-                            resolvedQueueUrl, message.receiptHandle(), e);
+                        .queueUrl(resolvedQueueUrl).receiptHandle(message.receiptHandle()).build());
+                return true;
+            } catch (Exception e) {
+                boolean retryable = e instanceof SdkClientException
+                        || (e instanceof SqsException && (((SqsException) e).statusCode() >= 500
+                        || ((SqsException) e).statusCode() == 429
+                        || ((SqsException) e).isThrottlingException()));
+                if (!retryable || attempt == DELETE_MAX_RETRIES || isTerminated()) {
+                    reportError("Failed to delete SQS message " + message.messageId()
+                            + "; it may be redelivered. Queue: " + resolvedQueueUrl, e);
+                    return false;
+                }
+                try {
+                    Thread.sleep(DELETE_RETRY_DELAY_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    reportError("Interrupted deleting SQS message " + message.messageId(), interrupted);
+                    return false;
                 }
             }
         }
+        return false;
+    }
+
+    private void reportError(String description, Throwable error) {
+        logger.error(description, error);
+        eventController.dispatchEvent(new ErrorEvent(getChannelId(), getMetaDataId(), null,
+                ErrorEventType.SOURCE_CONNECTOR, getSourceName(), connectorProperties.getName(), description, error));
     }
 
     // =========================================================================
@@ -833,7 +846,8 @@ public class SqsReceiver extends PollConnector {
      */
     private SqsClient buildSqsClient() {
         SqsClientBuilder builder = SqsClient.builder()
-                .credentialsProvider(awsCredentials.getProvider());
+                .credentialsProvider(awsCredentials.getProvider())
+                .overrideConfiguration(AwsClientConfiguration.standard());
 
         if (resolvedRegion != null && !resolvedRegion.isBlank()) {
             builder.region(Region.of(resolvedRegion));
@@ -847,7 +861,8 @@ public class SqsReceiver extends PollConnector {
      */
     private S3Client buildS3Client() {
         S3ClientBuilder builder = S3Client.builder()
-                .credentialsProvider(awsCredentials.getProvider());
+                .credentialsProvider(awsCredentials.getProvider())
+                .overrideConfiguration(AwsClientConfiguration.standard());
 
         if (resolvedRegion != null && !resolvedRegion.isBlank()) {
             builder.region(Region.of(resolvedRegion));

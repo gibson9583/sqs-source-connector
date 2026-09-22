@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: MPL-2.0
  */
 package io.github.gibson9583.sqs;
 
@@ -22,7 +22,6 @@ import javax.swing.border.TitledBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
-import com.mirth.connect.client.ui.PlatformUI;
 import com.mirth.connect.client.ui.UIConstants;
 import com.mirth.connect.client.ui.panels.connectors.ConnectorSettingsPanel;
 import com.mirth.connect.connectors.sqs.SqsReceiverProperties;
@@ -34,7 +33,7 @@ import net.miginfocom.swing.MigLayout;
  * Swing settings panel for the SQS source connector.
  * <p>
  * All configurable fields are plain text fields (not spinners) so that users
- * can enter OIE replacement variables like {@code ${configMap.queueUrl}},
+ * can enter OIE replacement variables like {@code ${queueUrl}},
  * {@code ${sqs.waitTime}}, {@code ${AWS_SECRET_KEY}}, etc. The region
  * dropdown is editable for the same reason.
  * <p>
@@ -42,6 +41,9 @@ import net.miginfocom.swing.MigLayout;
  * with the SQS Reader source connector.
  */
 public class SqsReceiverPanel extends ConnectorSettingsPanel {
+
+    private final SqsUiContext ui;
+    private SqsQueueInspectorPanel inspector;
 
     // --- AWS Connection ---
     private JTextField queueUrlField;
@@ -101,9 +103,19 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
 
     private static final String[] S3_FILE_TYPES = { "Text", "Binary" };
 
-    public SqsReceiverPanel() {
+    public SqsReceiverPanel() { this(SqsUiContext.HOST, SqsQueueInspectorPanel.HOST); }
+
+    SqsReceiverPanel(SqsUiContext ui, SqsQueueInspectorPanel.Service inspectionService) {
+        this.ui = ui;
         initComponents();
+        inspector = new SqsQueueInspectorPanel(this::getConnectionProperties, this::getChannelId, this::getChannelName, inspectionService, ui::canInspect);
+        inspector.invalidateResult();
         initLayout();
+    }
+
+    private void changed() {
+        ui.setSaveEnabled(true);
+        if (inspector != null) inspector.invalidateResult();
     }
 
     // =========================================================================
@@ -117,26 +129,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
 
     @Override
     public ConnectorProperties getProperties() {
-        SqsReceiverProperties props = new SqsReceiverProperties();
-
-        // AWS Connection
-        props.setQueueUrl(queueUrlField.getText().trim());
-        // Editable combo: user may have typed a variable like ${configMap.region}
-        Object regionSelection = regionCombo.getEditor().getItem();
-        props.setRegion(regionSelection != null ? regionSelection.toString().trim() : "");
-
-        // Auth
-        if (authStaticRadio.isSelected()) {
-            props.setAuthType(SqsReceiverProperties.AuthType.STATIC);
-            props.setAccessKeyId(accessKeyIdField.getText().trim());
-            props.setSecretAccessKey(new String(secretAccessKeyField.getPassword()));
-        } else if (authRoleRadio.isSelected()) {
-            props.setAuthType(SqsReceiverProperties.AuthType.ROLE);
-            props.setRoleArn(roleArnField.getText().trim());
-            props.setExternalId(externalIdField.getText().trim());
-        } else {
-            props.setAuthType(SqsReceiverProperties.AuthType.DEFAULT);
-        }
+        SqsReceiverProperties props = getConnectionProperties();
 
         // SQS Settings (stored as String for Velocity substitution)
         props.setWaitTimeSeconds(waitTimeField.getText().trim());
@@ -156,7 +149,32 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         props.setS3MaxObjectSizeKB(s3MaxSizeField.getText().trim());
         Object fileTypeSelection = s3FileTypeCombo.getSelectedItem();
         props.setS3FileType(fileTypeSelection != null ? fileTypeSelection.toString() : "Text");
-        props.setS3Encoding(PlatformUI.MIRTH_FRAME.getSelectedEncodingForConnector(s3EncodingCombo));
+        props.setS3Encoding(ui.getEncoding(s3EncodingCombo));
+
+        return props;
+    }
+
+    private SqsReceiverProperties getConnectionProperties() {
+        SqsReceiverProperties props = new SqsReceiverProperties();
+
+        // AWS Connection
+        props.setQueueUrl(queueUrlField.getText().trim());
+        // Editable combo: user may have typed a variable like ${region}
+        Object regionSelection = regionCombo.getEditor().getItem();
+        props.setRegion(regionSelection != null ? regionSelection.toString().trim() : "");
+
+        // Auth
+        if (authStaticRadio.isSelected()) {
+            props.setAuthType(SqsReceiverProperties.AuthType.STATIC);
+            props.setAccessKeyId(accessKeyIdField.getText().trim());
+            props.setSecretAccessKey(new String(secretAccessKeyField.getPassword()));
+        } else if (authRoleRadio.isSelected()) {
+            props.setAuthType(SqsReceiverProperties.AuthType.ROLE);
+            props.setRoleArn(roleArnField.getText().trim());
+            props.setExternalId(externalIdField.getText().trim());
+        } else {
+            props.setAuthType(SqsReceiverProperties.AuthType.DEFAULT);
+        }
 
         return props;
     }
@@ -166,7 +184,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         SqsReceiverProperties props = (SqsReceiverProperties) properties;
 
         // Preserve save state so that populating fields doesn't falsely trigger dirty
-        boolean saveEnabled = PlatformUI.MIRTH_FRAME.isSaveEnabled();
+        boolean saveEnabled = ui.isSaveEnabled();
 
         // AWS Connection
         queueUrlField.setText(props.getQueueUrl());
@@ -174,6 +192,11 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         regionCombo.setSelectedItem(props.getRegion());
 
         // Auth
+        // Panels are shared across connectors: overwrite every card on every load.
+        accessKeyIdField.setText(props.getAccessKeyId());
+        secretAccessKeyField.setText(props.getSecretAccessKey());
+        roleArnField.setText(props.getRoleArn());
+        externalIdField.setText(props.getExternalId());
         switch (props.getAuthType()) {
             case STATIC:
                 authStaticRadio.setSelected(true);
@@ -218,7 +241,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         }
         s3MaxSizeField.setText(props.getS3MaxObjectSizeKB());
         s3FileTypeCombo.setSelectedItem(props.getS3FileType());
-        PlatformUI.MIRTH_FRAME.setPreviousSelectedEncodingForConnector(s3EncodingCombo, props.getS3Encoding());
+        ui.setEncoding(s3EncodingCombo, props.getS3Encoding());
 
         // Visibility
         s3MaxSizeLabel.setVisible(fetchMode);
@@ -229,8 +252,9 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         s3EncodingLabel.setVisible(fetchMode && isText);
         s3EncodingCombo.setVisible(fetchMode && isText);
 
+        if (inspector != null) inspector.invalidateResult();
         // Restore save state
-        PlatformUI.MIRTH_FRAME.setSaveEnabled(saveEnabled);
+        ui.setSaveEnabled(saveEnabled);
     }
 
     @Override
@@ -254,7 +278,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         }
 
         // Wait time, max messages, visibility timeout must be non-empty
-        if (props.getWaitTimeSeconds() == null || props.getWaitTimeSeconds().isBlank()) {
+        if (!SqsPanelValidation.integer(props.getWaitTimeSeconds(), 0, 20, false)) {
             valid = false;
             if (highlight) {
                 waitTimeField.setBackground(UIConstants.INVALID_COLOR);
@@ -263,7 +287,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
             waitTimeField.setBackground(null);
         }
 
-        if (props.getMaxMessages() == null || props.getMaxMessages().isBlank()) {
+        if (!SqsPanelValidation.integer(props.getMaxMessages(), 1, 10, false)) {
             valid = false;
             if (highlight) {
                 maxMessagesField.setBackground(UIConstants.INVALID_COLOR);
@@ -272,7 +296,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
             maxMessagesField.setBackground(null);
         }
 
-        if (props.getVisibilityTimeout() == null || props.getVisibilityTimeout().isBlank()) {
+        if (!SqsPanelValidation.integer(props.getVisibilityTimeout(), 0, 43200, false)) {
             valid = false;
             if (highlight) {
                 visibilityTimeoutField.setBackground(UIConstants.INVALID_COLOR);
@@ -313,9 +337,9 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
             }
         }
 
-        // S3 Fetch Object mode requires max size to be non-empty
+        // S3 size supports blank/zero as unlimited and long KB values.
         if (props.getS3EventMode() == SqsReceiverProperties.S3EventMode.FETCH_OBJECT) {
-            if (props.getS3MaxObjectSizeKB() == null || props.getS3MaxObjectSizeKB().isBlank()) {
+            if (!SqsPanelValidation.integer(props.getS3MaxObjectSizeKB(), 0, Long.MAX_VALUE / 1024, true)) {
                 valid = false;
                 if (highlight) {
                     s3MaxSizeField.setBackground(UIConstants.INVALID_COLOR);
@@ -325,7 +349,15 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
             }
         }
 
-        return valid;
+        boolean fifoValid = !props.isMessageGroupHandling() || (props.getSourceConnectorProperties().isRespondAfterProcessing()
+                && props.getSourceConnectorProperties().getProcessingThreads() == 1);
+        boolean batchValid = !(props.getS3EventMode() == SqsReceiverProperties.S3EventMode.FETCH_OBJECT
+                && "Binary".equals(props.getS3FileType()) && props.getSourceConnectorProperties().isProcessBatch());
+        if (highlight) {
+            messageGroupHandlingCheck.setForeground(fifoValid ? null : Color.RED);
+            s3FileTypeCombo.setBackground(batchValid ? null : UIConstants.INVALID_COLOR);
+        }
+        return valid && fifoValid && batchValid;
     }
 
     @Override
@@ -338,6 +370,8 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         maxMessagesField.setBackground(null);
         visibilityTimeoutField.setBackground(null);
         s3MaxSizeField.setBackground(null);
+        messageGroupHandlingCheck.setForeground(null);
+        s3FileTypeCombo.setBackground(null);
     }
 
     // =========================================================================
@@ -345,7 +379,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
     // =========================================================================
 
     private void initComponents() {
-        String velocityHint = " — supports replacement variables e.g. ${configMap.key}";
+        String velocityHint = " — supports replacement variables e.g. ${key}";
 
         // Queue URL
         queueUrlField = new JTextField();
@@ -463,11 +497,11 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         includeAttributesCheck.setToolTipText(
                 "Adds SQS message attributes (user-defined and system) to the source map");
 
-        messageGroupHandlingCheck = new JCheckBox("FIFO queue message group handling");
+        messageGroupHandlingCheck = new JCheckBox("Process FIFO source messages in order");
         messageGroupHandlingCheck.setBackground(UIConstants.BACKGROUND_COLOR);
         messageGroupHandlingCheck.setSelected(false);
         messageGroupHandlingCheck.setToolTipText(
-                "Enable for FIFO queues. Includes MessageGroupId and SequenceNumber in source map.");
+                "Requires Source Queue OFF and one processing thread. Queued destinations may finish later.");
 
         // S3 Event Notification controls
         s3DisabledRadio = new JRadioButton("Disabled");
@@ -496,7 +530,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         s3MaxSizeField = new JTextField("10240");
         s3MaxSizeField.setToolTipText(
                 "Maximum S3 object size in KB to fetch. Objects larger than this are skipped "
-                        + "and the original event JSON is passed instead. 0 = no limit."
+                        + "and the original event JSON is passed instead. Blank or 0 = no limit."
                         + velocityHint);
 
         // File Type combo (Text / Binary)
@@ -510,14 +544,14 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         // Encoding combo — populated by OIE's standard charset list
         s3EncodingLabel = new JLabel("Encoding:");
         s3EncodingCombo = new JComboBox<>();
-        PlatformUI.MIRTH_FRAME.setupCharsetEncodingForConnector(s3EncodingCombo);
+        ui.setupEncoding(s3EncodingCombo);
         s3EncodingCombo.setToolTipText(
                 "Fallback encoding when the S3 object's Content-Type header does not specify a charset. "
                         + "Content-Type charset is always tried first.");
 
         // Show/hide encoding combo based on file type
         s3FileTypeCombo.addActionListener((ActionEvent e) -> {
-            boolean isText = "Text".equals(s3FileTypeCombo.getSelectedItem());
+            boolean isText = s3FetchRadio.isSelected() && "Text".equals(s3FileTypeCombo.getSelectedItem());
             s3EncodingLabel.setVisible(isText);
             s3EncodingCombo.setVisible(isText);
         });
@@ -550,13 +584,13 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         // radio buttons and checkboxes use ActionListener.
         DocumentListener saveDocListener = new DocumentListener() {
             @Override
-            public void insertUpdate(DocumentEvent e) { PlatformUI.MIRTH_FRAME.setSaveEnabled(true); }
+            public void insertUpdate(DocumentEvent e) { changed(); }
             @Override
-            public void removeUpdate(DocumentEvent e) { PlatformUI.MIRTH_FRAME.setSaveEnabled(true); }
+            public void removeUpdate(DocumentEvent e) { changed(); }
             @Override
-            public void changedUpdate(DocumentEvent e) { PlatformUI.MIRTH_FRAME.setSaveEnabled(true); }
+            public void changedUpdate(DocumentEvent e) { changed(); }
         };
-        ActionListener saveActionListener = (ActionEvent e) -> PlatformUI.MIRTH_FRAME.setSaveEnabled(true);
+        ActionListener saveActionListener = (ActionEvent e) -> changed();
 
         // Text fields
         queueUrlField.getDocument().addDocumentListener(saveDocListener);
@@ -632,6 +666,7 @@ public class SqsReceiverPanel extends ConnectorSettingsPanel {
         authPanel.add(authCardsPanel, "growx");
 
         add(authPanel);
+        add(inspector);
 
         // --- SQS Settings section ---
         JPanel sqsPanel = new JPanel(

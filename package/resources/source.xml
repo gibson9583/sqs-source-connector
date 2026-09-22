@@ -18,6 +18,8 @@
     <serverClassName>io.github.gibson9583.sqs.SqsReceiver</serverClassName>
     <sharedClassName>com.mirth.connect.connectors.sqs.SqsReceiverProperties</sharedClassName>
     <clientClassName>io.github.gibson9583.sqs.SqsReceiverPanel</clientClassName>
+    <apiProvider type="SERVLET_INTERFACE" name="com.mirth.connect.connectors.sqs.SqsConnectorServletInterface"/>
+    <apiProvider type="SERVER_CLASS" name="io.github.gibson9583.sqs.SqsConnectorServlet"/>
 
     <!-- Connector module JARs -->
     <library type="SHARED" path="libs/sqs-connector-shared-${project.version}.jar"/>
@@ -25,21 +27,21 @@
     <library type="CLIENT" path="libs/sqs-connector-client-${project.version}.jar"/>
 
     <!-- AWS SDK v2 (matching OIE 4.5.2 bundled version 2.15.28) -->
-    <library type="SERVER" path="libs/sqs-2.15.28.jar"/>
-    <library type="SERVER" path="libs/sts-2.15.28.jar"/>
-    <library type="SERVER" path="libs/aws-core-2.15.28.jar"/>
-    <library type="SERVER" path="libs/sdk-core-2.15.28.jar"/>
-    <library type="SERVER" path="libs/auth-2.15.28.jar"/>
-    <library type="SERVER" path="libs/regions-2.15.28.jar"/>
-    <library type="SERVER" path="libs/protocol-core-2.15.28.jar"/>
-    <library type="SERVER" path="libs/aws-query-protocol-2.15.28.jar"/>
-    <library type="SERVER" path="libs/http-client-spi-2.15.28.jar"/>
-    <library type="SERVER" path="libs/apache-client-2.15.28.jar"/>
-    <library type="SERVER" path="libs/netty-nio-client-2.15.28.jar"/>
-    <library type="SERVER" path="libs/utils-2.15.28.jar"/>
-    <library type="SERVER" path="libs/metrics-spi-2.15.28.jar"/>
-    <library type="SERVER" path="libs/profiles-2.15.28.jar"/>
-    <library type="SERVER" path="libs/annotations-2.15.28.jar"/>
+    <library type="SERVER" path="libs/sqs-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/sts-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/aws-core-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/sdk-core-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/auth-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/regions-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/protocol-core-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/aws-query-protocol-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/http-client-spi-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/apache-client-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/netty-nio-client-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/utils-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/metrics-spi-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/profiles-${aws.sdk.version}.jar"/>
+    <library type="SERVER" path="libs/annotations-${aws.sdk.version}.jar"/>
 
     <!-- AWS SDK transitive dependencies -->
     <library type="SERVER" path="libs/eventstream-1.0.1.jar"/>

@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: MPL-2.0
  */
 package io.github.gibson9583.sqs;
 
@@ -10,6 +10,12 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JTable;
+import javax.swing.DefaultCellEditor;
+import javax.swing.table.DefaultTableModel;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.ButtonGroup;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
@@ -23,10 +29,10 @@ import javax.swing.border.TitledBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
-import com.mirth.connect.client.ui.PlatformUI;
 import com.mirth.connect.client.ui.UIConstants;
 import com.mirth.connect.client.ui.panels.connectors.ConnectorSettingsPanel;
 import com.mirth.connect.connectors.sqs.SqsDispatcherProperties;
+import com.mirth.connect.connectors.sqs.SqsMessageAttribute;
 import com.mirth.connect.donkey.model.channel.ConnectorProperties;
 
 import net.miginfocom.swing.MigLayout;
@@ -35,7 +41,7 @@ import net.miginfocom.swing.MigLayout;
  * Swing settings panel for the SQS destination connector.
  * <p>
  * All configurable fields are plain text fields so that users can enter OIE
- * replacement variables like {@code ${configMap.queueUrl}},
+ * replacement variables like {@code ${queueUrl}},
  * {@code ${message.encodedData}}, etc. The region dropdown is editable for
  * the same reason.
  * <p>
@@ -43,6 +49,9 @@ import net.miginfocom.swing.MigLayout;
  * with the SQS Sender destination connector.
  */
 public class SqsSenderPanel extends ConnectorSettingsPanel {
+
+    private final SqsUiContext ui;
+    private SqsQueueInspectorPanel inspector;
 
     // --- AWS Connection ---
     private JTextField queueUrlField;
@@ -70,6 +79,9 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
 
     // --- Template ---
     private JTextArea templateTextArea;
+    private JTable attributesTable;
+    private DefaultTableModel attributesModel;
+    private JButton addAttributeButton;
 
     // AWS regions (user can also type a replacement variable)
     private static final String[] AWS_REGIONS = {
@@ -89,9 +101,19 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
     private static final String AUTH_CARD_STATIC = "static";
     private static final String AUTH_CARD_ROLE = "role";
 
-    public SqsSenderPanel() {
+    public SqsSenderPanel() { this(SqsUiContext.HOST, SqsQueueInspectorPanel.HOST); }
+
+    SqsSenderPanel(SqsUiContext ui, SqsQueueInspectorPanel.Service inspectionService) {
+        this.ui = ui;
         initComponents();
+        inspector = new SqsQueueInspectorPanel(this::getConnectionProperties, this::getChannelId, this::getChannelName, inspectionService, ui::canInspect);
+        inspector.invalidateResult();
         initLayout();
+    }
+
+    private void changed() {
+        ui.setSaveEnabled(true);
+        if (inspector != null) inspector.invalidateResult();
     }
 
     // =========================================================================
@@ -105,11 +127,38 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
 
     @Override
     public ConnectorProperties getProperties() {
+        SqsDispatcherProperties props = getConnectionProperties();
+
+        // Send Settings (stored as String for Velocity substitution)
+        props.setDelaySeconds(delaySecondsField.getText().trim());
+        props.setMessageGroupId(messageGroupIdField.getText().trim());
+        props.setMessageDeduplicationId(messageDeduplicationIdField.getText().trim());
+
+        // Commit the active cell before Save/Validate reads the table.
+        if (attributesTable.isEditing()) attributesTable.getCellEditor().stopCellEditing();
+        List<SqsMessageAttribute> attributes = new ArrayList<>();
+        for (int row = 0; row < attributesModel.getRowCount(); row++) {
+            attributes.add(new SqsMessageAttribute(cell(row, 0), cell(row, 1), cell(row, 2)));
+        }
+        props.setMessageAttributes(attributes);
+
+        // Template
+        props.setTemplate(templateTextArea.getText());
+
+        return props;
+    }
+
+    private String cell(int row, int column) {
+        Object value = attributesModel.getValueAt(row, column);
+        return value == null ? "" : value.toString();
+    }
+
+    private SqsDispatcherProperties getConnectionProperties() {
         SqsDispatcherProperties props = new SqsDispatcherProperties();
 
         // AWS Connection
         props.setQueueUrl(queueUrlField.getText().trim());
-        // Editable combo: user may have typed a variable like ${configMap.region}
+        // Editable combo: user may have typed a variable like ${region}
         Object regionSelection = regionCombo.getEditor().getItem();
         props.setRegion(regionSelection != null ? regionSelection.toString().trim() : "");
 
@@ -126,14 +175,6 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
             props.setAuthType(SqsDispatcherProperties.AuthType.DEFAULT);
         }
 
-        // Send Settings (stored as String for Velocity substitution)
-        props.setDelaySeconds(delaySecondsField.getText().trim());
-        props.setMessageGroupId(messageGroupIdField.getText().trim());
-        props.setMessageDeduplicationId(messageDeduplicationIdField.getText().trim());
-
-        // Template
-        props.setTemplate(templateTextArea.getText());
-
         return props;
     }
 
@@ -142,7 +183,7 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
         SqsDispatcherProperties props = (SqsDispatcherProperties) properties;
 
         // Preserve save state so that populating fields doesn't falsely trigger dirty
-        boolean saveEnabled = PlatformUI.MIRTH_FRAME.isSaveEnabled();
+        boolean saveEnabled = ui.isSaveEnabled();
 
         // AWS Connection
         queueUrlField.setText(props.getQueueUrl());
@@ -150,6 +191,11 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
         regionCombo.setSelectedItem(props.getRegion());
 
         // Auth
+        // Panels are shared across connectors: overwrite every card on every load.
+        accessKeyIdField.setText(props.getAccessKeyId());
+        secretAccessKeyField.setText(props.getSecretAccessKey());
+        roleArnField.setText(props.getRoleArn());
+        externalIdField.setText(props.getExternalId());
         switch (props.getAuthType()) {
             case STATIC:
                 authStaticRadio.setSelected(true);
@@ -175,11 +221,19 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
         messageGroupIdField.setText(props.getMessageGroupId());
         messageDeduplicationIdField.setText(props.getMessageDeduplicationId());
 
+        if (attributesTable.isEditing()) attributesTable.getCellEditor().cancelCellEditing();
+        attributesModel.setRowCount(0);
+        for (SqsMessageAttribute attribute : props.getMessageAttributes()) {
+            attributesModel.addRow(attribute == null ? new Object[] { "", "String", "" }
+                    : new Object[] { attribute.getName(), attribute.getDataType(), attribute.getValue() });
+        }
+        addAttributeButton.setEnabled(attributesModel.getRowCount() < 10);
         // Template
         templateTextArea.setText(props.getTemplate());
 
+        if (inspector != null) inspector.invalidateResult();
         // Restore save state
-        PlatformUI.MIRTH_FRAME.setSaveEnabled(saveEnabled);
+        ui.setSaveEnabled(saveEnabled);
     }
 
     @Override
@@ -244,7 +298,22 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
             }
         }
 
-        return valid;
+        boolean delayValid = SqsPanelValidation.integer(props.getDelaySeconds(), 0, 900, true);
+        boolean groupValid = true;
+        if (!SqsPanelValidation.expression(props.getQueueUrl()) && props.getQueueUrl() != null && props.getQueueUrl().endsWith(".fifo")) {
+            groupValid = !SqsPanelValidation.blank(props.getMessageGroupId());
+            delayValid &= SqsPanelValidation.blank(props.getDelaySeconds());
+        }
+        boolean dedupValid = SqsPanelValidation.expression(props.getQueueUrl()) || SqsPanelValidation.blank(props.getQueueUrl())
+                || props.getQueueUrl().endsWith(".fifo") || SqsPanelValidation.blank(props.getMessageDeduplicationId());
+        boolean attributesValid = SqsPanelValidation.attributes(props.getMessageAttributes());
+        if (highlight) {
+            delaySecondsField.setBackground(delayValid ? null : UIConstants.INVALID_COLOR);
+            messageGroupIdField.setBackground(groupValid ? null : UIConstants.INVALID_COLOR);
+            messageDeduplicationIdField.setBackground(dedupValid ? null : UIConstants.INVALID_COLOR);
+            attributesTable.setBackground(attributesValid ? Color.WHITE : UIConstants.INVALID_COLOR);
+        }
+        return valid && delayValid && groupValid && dedupValid && attributesValid;
     }
 
     @Override
@@ -254,6 +323,10 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
         secretAccessKeyField.setBackground(null);
         roleArnField.setBackground(null);
         templateTextArea.setBackground(Color.WHITE);
+        delaySecondsField.setBackground(null);
+        messageGroupIdField.setBackground(null);
+        attributesTable.setBackground(Color.WHITE);
+        messageDeduplicationIdField.setBackground(null);
     }
 
     // =========================================================================
@@ -261,7 +334,7 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
     // =========================================================================
 
     private void initComponents() {
-        String velocityHint = " — supports replacement variables e.g. ${configMap.key}";
+        String velocityHint = " — supports replacement variables e.g. ${key}";
 
         // Queue URL
         queueUrlField = new JTextField();
@@ -366,7 +439,7 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
 
         messageGroupIdField = new JTextField("");
         messageGroupIdField.setToolTipText(
-                "Message group ID — required for FIFO queues, ignored for standard queues."
+                "Required for FIFO queues; optional fair-queue tenant grouping for standard queues."
                         + velocityHint);
 
         messageDeduplicationIdField = new JTextField("");
@@ -386,18 +459,33 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
                         + "channel message, or ${message.rawData} for the original inbound message."
                         + velocityHint);
 
+        attributesModel = new DefaultTableModel(new Object[] { "Name", "Data Type", "Value" }, 0);
+        attributesTable = new JTable(attributesModel);
+        attributesTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
+        attributesTable.getColumnModel().getColumn(1).setCellEditor(new DefaultCellEditor(new JComboBox<>(new String[] { "String", "Number", "Binary" })));
+        attributesTable.setToolTipText("Up to 10 attributes. Names and values support ${key}. Binary values use Base64.");
+        addAttributeButton = new JButton("Add Attribute");
+        addAttributeButton.addActionListener(e -> {
+            if (attributesTable.isEditing()) attributesTable.getCellEditor().stopCellEditing();
+            if (attributesModel.getRowCount() < 10) attributesModel.addRow(new Object[] { "", "String", "" });
+        });
+        attributesModel.addTableModelListener(e -> {
+            addAttributeButton.setEnabled(attributesModel.getRowCount() < 10);
+            changed();
+        });
+
         // --- Change notification for all components ---
         // OIE requires explicit save notification; text fields use DocumentListener,
         // radio buttons use ActionListener.
         DocumentListener saveDocListener = new DocumentListener() {
             @Override
-            public void insertUpdate(DocumentEvent e) { PlatformUI.MIRTH_FRAME.setSaveEnabled(true); }
+            public void insertUpdate(DocumentEvent e) { changed(); }
             @Override
-            public void removeUpdate(DocumentEvent e) { PlatformUI.MIRTH_FRAME.setSaveEnabled(true); }
+            public void removeUpdate(DocumentEvent e) { changed(); }
             @Override
-            public void changedUpdate(DocumentEvent e) { PlatformUI.MIRTH_FRAME.setSaveEnabled(true); }
+            public void changedUpdate(DocumentEvent e) { changed(); }
         };
-        ActionListener saveActionListener = (ActionEvent e) -> PlatformUI.MIRTH_FRAME.setSaveEnabled(true);
+        ActionListener saveActionListener = (ActionEvent e) -> changed();
 
         // Text fields
         queueUrlField.getDocument().addDocumentListener(saveDocListener);
@@ -462,6 +550,7 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
         authPanel.add(authCardsPanel, "growx");
 
         add(authPanel);
+        add(inspector);
 
         // --- Send Settings section ---
         JPanel sendPanel = new JPanel(
@@ -474,12 +563,30 @@ public class SqsSenderPanel extends ConnectorSettingsPanel {
 
         sendPanel.add(new JLabel("Delay Seconds (optional):"));
         sendPanel.add(delaySecondsField, "width 200!");
-        sendPanel.add(new JLabel("FIFO Message Group ID:"));
+        sendPanel.add(new JLabel("Message Group ID:"));
         sendPanel.add(messageGroupIdField, "width 300!");
         sendPanel.add(new JLabel("FIFO Deduplication ID (optional):"));
         sendPanel.add(messageDeduplicationIdField, "width 300!");
 
         add(sendPanel);
+
+        JPanel attributesPanel = new JPanel(new MigLayout("insets 8, fill, wrap 1", "[grow,fill]"));
+        attributesPanel.setBackground(UIConstants.BACKGROUND_COLOR);
+        attributesPanel.setBorder(BorderFactory.createTitledBorder("Message Attributes"));
+        attributesPanel.add(new JLabel("Up to 10 attributes. Names/values support ${key}; Binary values use Base64."));
+        attributesPanel.add(new JScrollPane(attributesTable), "grow, height 100:140:");
+        JPanel attributeButtons = new JPanel();
+        attributeButtons.setOpaque(false);
+        attributeButtons.add(addAttributeButton);
+        JButton removeAttributeButton = new JButton("Remove Selected");
+        removeAttributeButton.addActionListener(e -> {
+            if (attributesTable.isEditing()) attributesTable.getCellEditor().stopCellEditing();
+            int[] rows = attributesTable.getSelectedRows();
+            for (int i = rows.length - 1; i >= 0; i--) attributesModel.removeRow(rows[i]);
+        });
+        attributeButtons.add(removeAttributeButton);
+        attributesPanel.add(attributeButtons);
+        add(attributesPanel);
 
         // --- Template section ---
         JPanel templatePanel = new JPanel(new MigLayout("insets 8, fill, wrap 1"));

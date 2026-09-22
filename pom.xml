@@ -6,11 +6,19 @@
 
     <groupId>io.github.gibson9583</groupId>
     <artifactId>sqs-connector</artifactId>
-    <version>0.5.2</version>
+    <version>1.0.0</version>
     <packaging>pom</packaging>
 
     <name>OIE SQS Connector</name>
     <description>AWS SQS source and destination connectors for OIE</description>
+
+    <licenses>
+        <license>
+            <name>Mozilla Public License 2.0</name>
+            <url>https://mozilla.org/MPL/2.0/</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
 
     <modules>
         <module>shared</module>
@@ -82,9 +90,46 @@
         </dependencies>
     </dependencyManagement>
 
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.11.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/..</directory>
+                <targetPath>META-INF</targetPath>
+                <includes><include>LICENSE</include></includes>
+                <filtering>false</filtering>
+            </resource>
+        </resources>
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.2</version>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <java.awt.headless>true</java.awt.headless>
+                            <aws.disableEc2Metadata>true</aws.disableEc2Metadata>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>

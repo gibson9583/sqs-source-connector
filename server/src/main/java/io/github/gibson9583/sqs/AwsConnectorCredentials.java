@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: MPL-2.0
  */
 package io.github.gibson9583.sqs;
 
@@ -35,8 +35,9 @@ public class AwsConnectorCredentials implements AutoCloseable {
 
     private final AwsCredentialsProvider provider;
     private final StsClient stsClient;
+    private boolean closed;
 
-    private AwsConnectorCredentials(AwsCredentialsProvider provider, StsClient stsClient) {
+    AwsConnectorCredentials(AwsCredentialsProvider provider, StsClient stsClient) {
         this.provider = provider;
         this.stsClient = stsClient;
     }
@@ -61,16 +62,20 @@ public class AwsConnectorCredentials implements AutoCloseable {
                     roleRequestBuilder.externalId(externalId);
                 }
 
-                StsClient stsClient = region != null && !region.isBlank()
-                        ? StsClient.builder().region(Region.of(region)).build()
-                        : StsClient.builder().build();
-
-                AwsCredentialsProvider provider = StsAssumeRoleCredentialsProvider.builder()
-                        .stsClient(stsClient)
-                        .refreshRequest(roleRequestBuilder.build())
-                        .build();
-
-                return new AwsConnectorCredentials(provider, stsClient);
+                software.amazon.awssdk.services.sts.StsClientBuilder stsBuilder = StsClient.builder()
+                        .overrideConfiguration(AwsClientConfiguration.inspection());
+                if (region != null && !region.isBlank()) stsBuilder.region(Region.of(region));
+                StsClient stsClient = stsBuilder.build();
+                try {
+                    AwsCredentialsProvider provider = StsAssumeRoleCredentialsProvider.builder()
+                            .stsClient(stsClient)
+                            .refreshRequest(roleRequestBuilder.build())
+                            .build();
+                    return new AwsConnectorCredentials(provider, stsClient);
+                } catch (RuntimeException | Error e) {
+                    try { stsClient.close(); } catch (RuntimeException closeFailure) { e.addSuppressed(closeFailure); }
+                    throw e;
+                }
 
             case DEFAULT:
             default:
@@ -84,17 +89,20 @@ public class AwsConnectorCredentials implements AutoCloseable {
 
     /**
      * Closes the STS client and assume-role provider for ROLE auth.
-     * DEFAULT and STATIC providers hold no resources; in particular the
-     * DefaultCredentialsProvider is a JVM-wide singleton and must never
-     * be closed here.
+     * The DEFAULT provider is a JVM-wide singleton whose resources are shared
+     * with other connectors and must never be closed here. STATIC has no resources.
      */
     @Override
-    public void close() {
-        if (stsClient != null) {
-            if (provider instanceof SdkAutoCloseable) {
-                ((SdkAutoCloseable) provider).close();
+    public synchronized void close() {
+        if (!closed && stsClient != null) {
+            closed = true;
+            try {
+                if (provider instanceof SdkAutoCloseable) {
+                    ((SdkAutoCloseable) provider).close();
+                }
+            } finally {
+                stsClient.close();
             }
-            stsClient.close();
         }
     }
 }

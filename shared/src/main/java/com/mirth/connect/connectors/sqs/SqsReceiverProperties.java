@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: MPL-2.0
  */
 package com.mirth.connect.connectors.sqs;
 
@@ -118,7 +118,7 @@ public class SqsReceiverProperties extends ConnectorProperties
         StringBuilder sb = new StringBuilder();
         sb.append("QUEUE URL: ").append(queueUrl).append('\n');
         sb.append("REGION: ").append(region).append('\n');
-        sb.append("AUTH TYPE: ").append(authType).append('\n');
+        sb.append("AUTH TYPE: ").append(getAuthType()).append('\n');
         sb.append("LONG POLL WAIT: ").append(waitTimeSeconds).append("s\n");
         sb.append("MAX MESSAGES: ").append(maxMessages).append('\n');
         sb.append("VISIBILITY TIMEOUT: ").append(visibilityTimeout).append("s\n");
@@ -144,14 +144,14 @@ public class SqsReceiverProperties extends ConnectorProperties
         purged.put("pollConnectorProperties", pollConnectorProperties.getPurgedProperties());
         purged.put("sourceConnectorProperties", sourceConnectorProperties.getPurgedProperties());
         purged.put("region", region);
-        purged.put("authType", authType.name());
+        purged.put("authType", getAuthType().name());
         purged.put("waitTimeSeconds", waitTimeSeconds);
         purged.put("maxMessages", maxMessages);
         purged.put("visibilityTimeout", visibilityTimeout);
         purged.put("includeAttributes", includeAttributes);
         purged.put("messageGroupHandling", messageGroupHandling);
-        purged.put("s3EventMode", s3EventMode != null ? s3EventMode.name() : S3EventMode.DISABLED.name());
-        purged.put("s3MaxObjectSizeKB", s3MaxObjectSizeKB);
+        purged.put("s3EventMode", getS3EventMode().name());
+        purged.put("s3MaxObjectSizeKB", getS3MaxObjectSizeKB());
         purged.put("s3FileType", getS3FileType());
         purged.put("s3Encoding", getS3Encoding());
         return purged;
@@ -343,7 +343,7 @@ public class SqsReceiverProperties extends ConnectorProperties
                 && messageGroupHandling == that.messageGroupHandling
                 && Objects.equals(queueUrl, that.queueUrl)
                 && Objects.equals(region, that.region)
-                && authType == that.authType
+                && getAuthType() == that.getAuthType()
                 && Objects.equals(accessKeyId, that.accessKeyId)
                 && Objects.equals(secretAccessKey, that.secretAccessKey)
                 && Objects.equals(roleArn, that.roleArn)
@@ -351,17 +351,21 @@ public class SqsReceiverProperties extends ConnectorProperties
                 && Objects.equals(waitTimeSeconds, that.waitTimeSeconds)
                 && Objects.equals(maxMessages, that.maxMessages)
                 && Objects.equals(visibilityTimeout, that.visibilityTimeout)
-                && Objects.equals(s3EventMode, that.s3EventMode)
-                && Objects.equals(s3MaxObjectSizeKB, that.s3MaxObjectSizeKB)
-                && Objects.equals(s3FileType, that.s3FileType)
-                && Objects.equals(s3Encoding, that.s3Encoding);
+                && getS3EventMode() == that.getS3EventMode()
+                && Objects.equals(getS3MaxObjectSizeKB(), that.getS3MaxObjectSizeKB())
+                && Objects.equals(getS3FileType(), that.getS3FileType())
+                && Objects.equals(getS3Encoding(), that.getS3Encoding())
+                && Objects.equals(pollConnectorProperties, that.pollConnectorProperties)
+                && Objects.equals(sourceConnectorProperties, that.sourceConnectorProperties)
+                && Objects.equals(getPluginProperties(), that.getPluginProperties());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(queueUrl, region, authType, accessKeyId, secretAccessKey,
+        return Objects.hash(queueUrl, region, getAuthType(), accessKeyId, secretAccessKey,
                 roleArn, externalId, waitTimeSeconds, maxMessages, visibilityTimeout,
-                includeAttributes, messageGroupHandling, s3EventMode, s3MaxObjectSizeKB,
-                s3FileType, s3Encoding);
+                includeAttributes, messageGroupHandling, getS3EventMode(), getS3MaxObjectSizeKB(),
+                getS3FileType(), getS3Encoding(), SqsPropertyHash.polling(pollConnectorProperties),
+                SqsPropertyHash.source(sourceConnectorProperties), SqsPropertyHash.plugins(getPluginProperties()));
     }
 }

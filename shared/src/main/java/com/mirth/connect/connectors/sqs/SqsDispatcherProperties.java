@@ -1,9 +1,11 @@
 /*
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: MPL-2.0
  */
 package com.mirth.connect.connectors.sqs;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -53,6 +55,7 @@ public class SqsDispatcherProperties extends ConnectorProperties
     private String delaySeconds;
     private String messageGroupId;
     private String messageDeduplicationId;
+    private List<SqsMessageAttribute> messageAttributes;
 
     public SqsDispatcherProperties() {
         destinationConnectorProperties = new DestinationConnectorProperties(false);
@@ -69,6 +72,7 @@ public class SqsDispatcherProperties extends ConnectorProperties
         delaySeconds = "";
         messageGroupId = "";
         messageDeduplicationId = "";
+        messageAttributes = new ArrayList<>();
     }
 
     public SqsDispatcherProperties(SqsDispatcherProperties props) {
@@ -86,6 +90,10 @@ public class SqsDispatcherProperties extends ConnectorProperties
         delaySeconds = props.getDelaySeconds();
         messageGroupId = props.getMessageGroupId();
         messageDeduplicationId = props.getMessageDeduplicationId();
+        messageAttributes = new ArrayList<>();
+        for (SqsMessageAttribute attribute : props.getMessageAttributes()) {
+            messageAttributes.add(attribute == null ? null : new SqsMessageAttribute(attribute));
+        }
     }
 
     // =========================================================================
@@ -107,7 +115,7 @@ public class SqsDispatcherProperties extends ConnectorProperties
         StringBuilder sb = new StringBuilder();
         sb.append("QUEUE URL: ").append(queueUrl).append('\n');
         sb.append("REGION: ").append(region).append('\n');
-        sb.append("AUTH TYPE: ").append(authType).append('\n');
+        sb.append("AUTH TYPE: ").append(getAuthType()).append('\n');
         if (delaySeconds != null && !delaySeconds.isBlank()) {
             sb.append("DELAY: ").append(delaySeconds).append("s\n");
         }
@@ -116,6 +124,15 @@ public class SqsDispatcherProperties extends ConnectorProperties
         }
         if (messageDeduplicationId != null && !messageDeduplicationId.isBlank()) {
             sb.append("MESSAGE DEDUPLICATION ID: ").append(messageDeduplicationId).append('\n');
+        }
+        if (!getMessageAttributes().isEmpty()) {
+            sb.append("MESSAGE ATTRIBUTES:\n");
+            for (SqsMessageAttribute attribute : getMessageAttributes()) {
+                if (attribute != null) {
+                    sb.append(attribute.getName()).append(" (").append(attribute.getDataType())
+                            .append("): ").append(attribute.getValue()).append('\n');
+                }
+            }
         }
         sb.append('\n').append("[CONTENT]").append('\n');
         sb.append(template).append('\n');
@@ -127,11 +144,12 @@ public class SqsDispatcherProperties extends ConnectorProperties
         Map<String, Object> purged = new HashMap<>();
         purged.put("destinationConnectorProperties", destinationConnectorProperties.getPurgedProperties());
         purged.put("region", region);
-        purged.put("authType", authType.name());
+        purged.put("authType", getAuthType().name());
         purged.put("delaySecondsSet", delaySeconds != null && !delaySeconds.isBlank());
         purged.put("messageGroupIdSet", messageGroupId != null && !messageGroupId.isBlank());
         purged.put("messageDeduplicationIdSet", messageDeduplicationId != null && !messageDeduplicationId.isBlank());
         purged.put("templateLines", countLines(template));
+        purged.put("messageAttributeCount", getMessageAttributes().size());
         return purged;
     }
 
@@ -264,6 +282,23 @@ public class SqsDispatcherProperties extends ConnectorProperties
         this.messageDeduplicationId = messageDeduplicationId;
     }
 
+    /** Older serialized channels have no attribute list. */
+    public List<SqsMessageAttribute> getMessageAttributes() {
+        if (messageAttributes == null) {
+            messageAttributes = new ArrayList<>();
+        }
+        return messageAttributes;
+    }
+
+    public void setMessageAttributes(List<SqsMessageAttribute> messageAttributes) {
+        this.messageAttributes = new ArrayList<>();
+        if (messageAttributes != null) {
+            for (SqsMessageAttribute attribute : messageAttributes) {
+                this.messageAttributes.add(attribute == null ? null : new SqsMessageAttribute(attribute));
+            }
+        }
+    }
+
     // =========================================================================
     // equals / hashCode
     // =========================================================================
@@ -275,7 +310,7 @@ public class SqsDispatcherProperties extends ConnectorProperties
         SqsDispatcherProperties that = (SqsDispatcherProperties) o;
         return Objects.equals(queueUrl, that.queueUrl)
                 && Objects.equals(region, that.region)
-                && authType == that.authType
+                && getAuthType() == that.getAuthType()
                 && Objects.equals(accessKeyId, that.accessKeyId)
                 && Objects.equals(secretAccessKey, that.secretAccessKey)
                 && Objects.equals(roleArn, that.roleArn)
@@ -283,13 +318,18 @@ public class SqsDispatcherProperties extends ConnectorProperties
                 && Objects.equals(template, that.template)
                 && Objects.equals(delaySeconds, that.delaySeconds)
                 && Objects.equals(messageGroupId, that.messageGroupId)
-                && Objects.equals(messageDeduplicationId, that.messageDeduplicationId);
+                && Objects.equals(messageDeduplicationId, that.messageDeduplicationId)
+                && Objects.equals(getMessageAttributes(), that.getMessageAttributes())
+                && Objects.equals(destinationConnectorProperties, that.destinationConnectorProperties)
+                && Objects.equals(getPluginProperties(), that.getPluginProperties());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(queueUrl, region, authType, accessKeyId, secretAccessKey,
+        return Objects.hash(queueUrl, region, getAuthType(), accessKeyId, secretAccessKey,
                 roleArn, externalId, template, delaySeconds, messageGroupId,
-                messageDeduplicationId);
+                messageDeduplicationId, getMessageAttributes(),
+                SqsPropertyHash.destination(destinationConnectorProperties),
+                SqsPropertyHash.plugins(getPluginProperties()));
     }
 }
