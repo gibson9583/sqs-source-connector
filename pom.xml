@@ -6,7 +6,7 @@
 
     <groupId>io.github.gibson9583</groupId>
     <artifactId>sqs-connector</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <packaging>pom</packaging>
 
     <name>OIE SQS Connector</name>
@@ -33,7 +33,7 @@
         <mirth.version>4.5.2</mirth.version>
         <!-- Engine versions this plugin declares compatibility with (descriptor
              mirthVersion accepts a comma-separated list). -->
-        <mirth.compatible.versions>4.5.2,4.6.0</mirth.compatible.versions>
+        <mirth.compatible.versions>4.6.0,4.7.0</mirth.compatible.versions>
         <aws.sdk.version>2.15.28</aws.sdk.version>
     </properties>
 

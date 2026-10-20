@@ -1,5 +1,7 @@
 # AWS SQS Connector
 
+Engine compatibility for the prepared 1.0.2 release: **OIE 4.6.0 and 4.7.0 only**. See the [release preparation notes](oie-4.6-4.7-release.md) for validation status.
+
 Integrate [Amazon SQS](https://aws.amazon.com/sqs/) with Open Integration Engine.
 This extension ships **two** connectors:
 
@@ -24,8 +26,8 @@ This extension ships **two** connectors:
 
 ## Requirements
 
-- Community Store / Web Administrator: Open Integration Engine **4.6.0** or newer
-- Server / Swing extension descriptors also declare **4.5.2** compatibility
+- Community Store / Web Administrator: Open Integration Engine **4.6.0 or 4.7.0**
+- Server / Swing extension descriptors declare **4.6.0 and 4.7.0** compatibility
 - Network access from the engine host to the SQS endpoint (or a VPC endpoint)
 - Reader: `sqs:ReceiveMessage`, `sqs:DeleteMessage`, and `sqs:GetQueueAttributes`
 - Sender: `sqs:SendMessage`
