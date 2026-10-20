@@ -1,5 +1,7 @@
 # OIE SQS Connector
 
+Release 1.0.2 is being prepared with engine compatibility limited to OIE **4.6.0 and 4.7.0**. Runtime validation on the final 4.7.0 release is pending; see the [release preparation notes](docs/oie-4.6-4.7-release.md).
+
 An Open Integration Engine (OIE) connector plugin for AWS SQS, providing both a
 source connector (SQS Reader) that polls queues for messages and a destination
 connector (SQS Sender) that sends messages to queues.
@@ -54,8 +56,8 @@ tokens like `${message.encodedData}` in the JavaScript survive the build.
 
 ## Requirements
 
-- Server and Swing Administrator: declared compatibility with OIE 4.5.2 and 4.6.0
-- Community Store and Web Administrator: OIE 4.6.0+
+- Server and Swing Administrator: declared compatibility with OIE 4.6.0 and 4.7.0
+- Community Store and Web Administrator: OIE 4.6.0 or 4.7.0
 - Java 17+
 
 ## Building
