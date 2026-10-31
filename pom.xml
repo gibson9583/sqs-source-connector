@@ -34,7 +34,7 @@
         <!-- Engine versions this plugin declares compatibility with (descriptor
              mirthVersion accepts a comma-separated list). -->
         <mirth.compatible.versions>4.6.0,4.7.0</mirth.compatible.versions>
-        <aws.sdk.version>2.15.28</aws.sdk.version>
+        <aws.sdk.version>2.55.12</aws.sdk.version>
     </properties>
 
     <repositories>

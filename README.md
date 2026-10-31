@@ -77,11 +77,19 @@ consistency, and exclusion of test/build tooling from the extension. Tests do no
 require AWS credentials or contact AWS.
 
 The extension ships four JARs: its shared, server and client modules, plus the
-SQS service module from AWS SDK 2.15.28. OIE supplies the matching shared SDK,
+SQS service module from AWS SDK 2.55.12. OIE supplies the matching shared SDK,
 STS/S3, HTTP, Jackson and logging libraries. The package check rejects additional
 JARs and mismatched library registrations. Assembly uses resolved dependencies
 rather than a cached library directory, so older build output cannot reintroduce
 the redundant libraries.
+
+This SDK migration requires an engine containing the AWS SDK upgrade in
+[OIE engine PR #506](https://github.com/OpenIntegrationEngine/engine/pull/506).
+The connector uses SQS's JSON protocol and the engine-provided `aws-json-protocol`
+runtime. It cannot run on the older SDK shipped with existing OIE releases.
+Connector release versions and engine compatibility declarations are unchanged
+in this migration; update those declarations to the first compatible engine
+release before publishing the connector.
 
 ## Installation
 
