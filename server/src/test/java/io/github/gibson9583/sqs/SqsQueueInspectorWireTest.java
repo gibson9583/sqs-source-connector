@@ -7,10 +7,12 @@ import static org.mockito.Mockito.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -27,7 +29,7 @@ import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
 
-/** Real SDK signing, request marshalling, and XML parsing with an in-memory HTTP boundary. */
+/** Real SDK signing, request marshalling, and JSON parsing with an in-memory HTTP boundary. */
 class SqsQueueInspectorWireTest {
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
@@ -48,35 +50,31 @@ class SqsQueueInspectorWireTest {
                             body = new String(input.readAllBytes(), StandardCharsets.UTF_8);
                         }
                         List<String> attributes = new ArrayList<>();
-                        for (String field : body.split("&")) {
-                            String[] pair = field.split("=", 2);
-                            String name = URLDecoder.decode(pair[0], StandardCharsets.UTF_8);
-                            String value = pair.length == 2 ? URLDecoder.decode(pair[1], StandardCharsets.UTF_8) : "";
-                            if (name.equals("Action")) actions.add(value);
-                            if (name.startsWith("AttributeName.")) attributes.add(value);
+                        assertEquals("application/x-amz-json-1.0",
+                                request.httpRequest().firstMatchingHeader("Content-Type").orElseThrow());
+                        actions.add(request.httpRequest().firstMatchingHeader("X-Amz-Target").orElseThrow());
+                        JsonNode jsonRequest = new ObjectMapper().readTree(body);
+                        assertEquals("https://sqs.us-east-1.amazonaws.com/123456789012/orders" + (fifo ? ".fifo" : ""),
+                                jsonRequest.path("QueueUrl").asText());
+                        for (JsonNode attribute : jsonRequest.path("AttributeNames")) {
+                            attributes.add(attribute.asText());
                         }
                         attributeRequests.add(attributes);
                         // The observed standard-queue failure: explicit FIFO-only attributes are invalid.
                         boolean unsupported = !fifo && (attributes.contains("FifoQueue")
                                 || attributes.contains("ContentBasedDeduplication"));
-                        String xml = unsupported
-                                ? "<ErrorResponse><Error><Type>Sender</Type><Code>InvalidAttributeName</Code>"
-                                  + "<Message>Unknown Attribute FifoQueue.</Message></Error>"
-                                  + "<RequestId>fixture-rejected</RequestId></ErrorResponse>"
-                                : "<GetQueueAttributesResponse xmlns=\"http://queue.amazonaws.com/doc/2012-11-05/\">"
-                                  + "<GetQueueAttributesResult>"
-                                  + "<Attribute><Name>VisibilityTimeout</Name><Value>30</Value></Attribute>"
-                                  + "<Attribute><Name>Policy</Name><Value>policy-not-for-display</Value></Attribute>"
-                                  + "<Attribute><Name>FutureAttribute</Name><Value>future-not-for-display</Value></Attribute>"
-                                  + (fifo ? "<Attribute><Name>FifoQueue</Name><Value>true</Value></Attribute>"
-                                          + "<Attribute><Name>ContentBasedDeduplication</Name><Value>true</Value></Attribute>" : "")
-                                  + "</GetQueueAttributesResult><ResponseMetadata><RequestId>fixture-success</RequestId>"
-                                  + "</ResponseMetadata></GetQueueAttributesResponse>";
+                        String json = unsupported
+                                ? "{\"__type\":\"InvalidAttributeName\",\"message\":\"Unknown Attribute FifoQueue.\"}"
+                                : "{\"Attributes\":{\"VisibilityTimeout\":\"30\","
+                                  + "\"Policy\":\"policy-not-for-display\",\"FutureAttribute\":\"future-not-for-display\""
+                                  + (fifo ? ",\"FifoQueue\":\"true\",\"ContentBasedDeduplication\":\"true\"" : "")
+                                  + "}}";
                         return HttpExecuteResponse.builder()
                                 .response(SdkHttpResponse.builder().statusCode(unsupported ? 400 : 200)
-                                        .putHeader("Content-Type", "text/xml").build())
+                                        .putHeader("Content-Type", "application/x-amz-json-1.0")
+                                        .putHeader("x-amzn-RequestId", "fixture-response").build())
                                 .responseBody(AbortableInputStream.create(new ByteArrayInputStream(
-                                        xml.getBytes(StandardCharsets.UTF_8)))).build();
+                                        json.getBytes(StandardCharsets.UTF_8)))).build();
                     }
                 };
             }
@@ -95,7 +93,7 @@ class SqsQueueInspectorWireTest {
         properties.setQueueUrl("https://sqs.us-east-1.amazonaws.com/123456789012/orders" + (fifo ? ".fifo" : ""));
         ConnectionTestResponse result = inspector.inspect("channel", "Channel", properties);
         assertEquals(ConnectionTestResponse.Type.SUCCESS, result.getType(), result.getMessage());
-        assertEquals(List.of("GetQueueAttributes"), actions);
+        assertEquals(List.of("AmazonSQS.GetQueueAttributes"), actions);
         assertEquals(List.of(List.of("All")), attributeRequests);
         assertTrue(result.getMessage().contains("Default visibility timeout (seconds): 30"));
         assertEquals(fifo, result.getMessage().contains("FIFO queue: true"));
